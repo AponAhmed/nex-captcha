@@ -13,9 +13,22 @@ use ReflectionProperty;
 
 final class WpCommentsTest extends TestCase {
 
+	/** @var array<string, mixed> */
+	private array $settings_override = array();
+
 	protected function setUp(): void {
 		parent::setUp();
-		Functions\when( 'get_option' )->justReturn( base64_encode( str_repeat( 's', 32 ) ) );
+		$this->settings_override = array();
+
+		Functions\when( 'get_option' )->alias(
+			function ( string $key ) {
+				if ( 'nxc_secret' === $key ) {
+					return base64_encode( str_repeat( 's', 32 ) );
+				}
+
+				return 'nxc_settings' === $key ? $this->settings_override : false;
+			}
+		);
 		Functions\when( 'update_option' )->justReturn( true );
 		Functions\when( 'add_option' )->justReturn( true );
 		Functions\when( 'do_action' )->justReturn( null );
@@ -51,6 +64,16 @@ final class WpCommentsTest extends TestCase {
 		$this->fail( 'Could not solve the test challenge.' );
 	}
 
+	public function test_is_available_reads_the_forms_setting(): void {
+		$this->settings_override = array( 'forms' => array( 'comments' => false ) );
+
+		$this->assertFalse( ( new WpComments() )->is_available() );
+	}
+
+	public function test_is_available_defaults_to_enabled(): void {
+		$this->assertTrue( ( new WpComments() )->is_available() );
+	}
+
 	public function test_register_wires_the_documented_hooks(): void {
 		Functions\expect( 'add_action' )->once()->with( 'comment_form_after_fields', Mockery::type( 'array' ) );
 		Functions\expect( 'add_action' )->once()->with( 'comment_form_logged_in_after', Mockery::type( 'array' ) );
@@ -61,8 +84,9 @@ final class WpCommentsTest extends TestCase {
 		$this->addToAssertionCount( 3 );
 	}
 
-	public function test_an_administrator_bypasses_validation_untouched(): void {
-		Functions\expect( 'current_user_can' )->once()->with( 'manage_options' )->andReturn( true );
+	public function test_a_bypassed_role_skips_validation_untouched(): void {
+		Functions\expect( 'is_user_logged_in' )->once()->andReturn( true );
+		Functions\expect( 'wp_get_current_user' )->once()->andReturn( (object) array( 'roles' => array( 'administrator' ) ) );
 
 		$commentdata = array( 'comment_content' => 'hello' );
 		$result      = ( new WpComments() )->validate( $commentdata );
@@ -71,7 +95,7 @@ final class WpCommentsTest extends TestCase {
 	}
 
 	public function test_a_valid_token_returns_the_commentdata_unchanged(): void {
-		Functions\when( 'current_user_can' )->justReturn( false );
+		Functions\when( 'is_user_logged_in' )->justReturn( false );
 		Functions\when( 'get_transient' )->justReturn( false );
 		Functions\when( 'set_transient' )->justReturn( true );
 
@@ -84,7 +108,7 @@ final class WpCommentsTest extends TestCase {
 	}
 
 	public function test_a_missing_token_calls_wp_die(): void {
-		Functions\when( 'current_user_can' )->justReturn( false );
+		Functions\when( 'is_user_logged_in' )->justReturn( false );
 		Functions\expect( 'wp_die' )->once()->with(
 			Mockery::type( 'string' ),
 			Mockery::type( 'string' ),

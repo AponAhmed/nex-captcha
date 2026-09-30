@@ -3,6 +3,7 @@ declare( strict_types=1 );
 
 namespace Bitflw\NexCaptcha\Integrations;
 
+use Bitflw\NexCaptcha\Admin\Settings;
 use Bitflw\NexCaptcha\Core\Assets;
 use Bitflw\NexCaptcha\Support\Template;
 use Bitflw\NexCaptcha\Verification\Verifier;
@@ -12,17 +13,18 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Protects the core comment form.
  *
- * Bypasses administrators, matching docs/PLAN.md section 4.1's default
- * settings shape ("bypass_roles": ["administrator"]) -- this is the
- * documented *default*, not a speculative feature, just not yet
- * configurable since Admin\Settings doesn't exist.
+ * Bypasses roles from the configured bypass_roles setting (default
+ * ["administrator"], per docs/PLAN.md section 4.1) via the shared
+ * AbstractIntegration::role_bypassed() -- meaningful here since a
+ * logged-in commenter is completely normal, unlike login/register/
+ * lostpassword where nothing is authenticated yet at submission time.
  */
 class WpComments extends AbstractIntegration {
 
 	private const FORM_ID = 'comments';
 
 	public function is_available(): bool {
-		return true;
+		return (bool) ( Settings::get( 'forms' )[ self::FORM_ID ] ?? true );
 	}
 
 	public function register(): void {
@@ -32,7 +34,7 @@ class WpComments extends AbstractIntegration {
 	}
 
 	public function render(): void {
-		if ( $this->bypassed() ) {
+		if ( $this->role_bypassed() ) {
 			return;
 		}
 
@@ -45,7 +47,7 @@ class WpComments extends AbstractIntegration {
 	 * @return array<string, mixed>
 	 */
 	public function validate( array $commentdata ): array {
-		if ( $this->bypassed() || ! $this->is_relevant_submission() ) {
+		if ( $this->role_bypassed() || $this->ip_allowlisted() || ! $this->is_relevant_submission() ) {
 			return $commentdata;
 		}
 
@@ -80,12 +82,5 @@ class WpComments extends AbstractIntegration {
 	 */
 	private function is_relevant_submission(): bool {
 		return ! defined( 'REST_REQUEST' ) && ! defined( 'XMLRPC_REQUEST' );
-	}
-
-	private function bypassed(): bool {
-		// manage_options, not the 'administrator' role name: capabilities
-		// are the robust check WPCS wants (roles can be renamed), and
-		// manage_options is WP's own standard "is this an admin" test.
-		return current_user_can( 'manage_options' );
 	}
 }

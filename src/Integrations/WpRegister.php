@@ -3,6 +3,7 @@ declare( strict_types=1 );
 
 namespace Bitflw\NexCaptcha\Integrations;
 
+use Bitflw\NexCaptcha\Admin\Settings;
 use Bitflw\NexCaptcha\Core\Assets;
 use Bitflw\NexCaptcha\Support\Template;
 use Bitflw\NexCaptcha\Verification\Verifier;
@@ -18,7 +19,7 @@ class WpRegister extends AbstractIntegration {
 	private const FORM_ID = 'register';
 
 	public function is_available(): bool {
-		return true;
+		return (bool) ( Settings::get( 'forms' )[ self::FORM_ID ] ?? true );
 	}
 
 	public function register(): void {
@@ -38,6 +39,10 @@ class WpRegister extends AbstractIntegration {
 	 */
 	public function validate( WP_Error $errors, string $sanitized_user_login = '', string $user_email = '' ): WP_Error {
 		if ( ! $this->is_registration_submission() ) {
+			return $errors;
+		}
+
+		if ( $this->ip_allowlisted() ) {
 			return $errors;
 		}
 

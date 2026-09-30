@@ -14,9 +14,22 @@ use WP_Error;
 
 final class WpLostPasswordTest extends TestCase {
 
+	/** @var array<string, mixed> */
+	private array $settings_override = array();
+
 	protected function setUp(): void {
 		parent::setUp();
-		Functions\when( 'get_option' )->justReturn( base64_encode( str_repeat( 's', 32 ) ) );
+		$this->settings_override = array();
+
+		Functions\when( 'get_option' )->alias(
+			function ( string $key ) {
+				if ( 'nxc_secret' === $key ) {
+					return base64_encode( str_repeat( 's', 32 ) );
+				}
+
+				return 'nxc_settings' === $key ? $this->settings_override : false;
+			}
+		);
 		Functions\when( 'update_option' )->justReturn( true );
 		Functions\when( 'add_option' )->justReturn( true );
 		Functions\when( 'do_action' )->justReturn( null );
@@ -51,6 +64,16 @@ final class WpLostPasswordTest extends TestCase {
 		}
 
 		$this->fail( 'Could not solve the test challenge.' );
+	}
+
+	public function test_is_available_reads_the_forms_setting(): void {
+		$this->settings_override = array( 'forms' => array( 'lostpassword' => false ) );
+
+		$this->assertFalse( ( new WpLostPassword() )->is_available() );
+	}
+
+	public function test_is_available_defaults_to_enabled(): void {
+		$this->assertTrue( ( new WpLostPassword() )->is_available() );
 	}
 
 	public function test_register_wires_the_documented_hooks(): void {

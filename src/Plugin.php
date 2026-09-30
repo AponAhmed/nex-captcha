@@ -3,6 +3,7 @@ declare( strict_types=1 );
 
 namespace Bitflw\NexCaptcha;
 
+use Bitflw\NexCaptcha\Admin\SettingsPage;
 use Bitflw\NexCaptcha\Integrations\IntegrationInterface;
 use Bitflw\NexCaptcha\Integrations\WpComments;
 use Bitflw\NexCaptcha\Integrations\WpLogin;
@@ -21,6 +22,12 @@ final class Plugin {
 	public static function boot(): void {
 		ChallengeController::register();
 
+		if ( is_admin() ) {
+			SettingsPage::register();
+		}
+
+		add_shortcode( 'nexcaptcha', array( self::class, 'render_shortcode' ) );
+
 		foreach ( self::integrations() as $integration ) {
 			if ( $integration->is_available() ) {
 				$integration->register();
@@ -28,6 +35,15 @@ final class Plugin {
 		}
 
 		do_action( 'nxc_loaded' );
+	}
+
+	/**
+	 * @param array<string, mixed>|string $atts
+	 */
+	public static function render_shortcode( $atts ): string {
+		$atts = shortcode_atts( array( 'form' => 'custom' ), $atts );
+
+		return nxc_render( (string) $atts['form'] );
 	}
 
 	/**

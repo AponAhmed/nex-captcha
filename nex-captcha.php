@@ -68,6 +68,19 @@ if ( ! file_exists( NXC_PATH . 'vendor/autoload.php' ) ) {
 
 require_once NXC_PATH . 'vendor/autoload.php';
 
+// Not autoloaded via Composer's "files" mechanism on purpose: that runs
+// immediately whenever anything requires vendor/autoload.php --
+// including PHPUnit's own CLI bootstrap, before ABSPATH is ever
+// defined, which silently kills the whole process at this file's own
+// guard clause. A plain require here only ever runs in a real WP request.
+require_once NXC_PATH . 'src/functions.php';
+
+// Must be called from the main plugin file directly, not from a
+// plugins_loaded callback -- WP only recognizes these hooks when
+// they're registered while this file is first included.
+register_activation_hook( __FILE__, array( \Bitflw\NexCaptcha\Core\Activator::class, 'activate' ) );
+register_deactivation_hook( __FILE__, array( \Bitflw\NexCaptcha\Core\Deactivator::class, 'deactivate' ) );
+
 add_action(
 	'plugins_loaded',
 	static function (): void {

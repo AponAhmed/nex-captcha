@@ -3,6 +3,7 @@ declare( strict_types=1 );
 
 namespace Bitflw\NexCaptcha\Rest;
 
+use Bitflw\NexCaptcha\Admin\Settings;
 use Bitflw\NexCaptcha\Challenge\PowChallenge;
 use Bitflw\NexCaptcha\Support\Ip;
 use WP_REST_Request;
@@ -14,19 +15,22 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Registers and handles GET /wp-json/nexcaptcha/v1/challenge.
  *
- * Difficulty is hardcoded to Balanced and rate limiting is a fixed stub
- * until Admin\Settings and Signals\RateLimiter exist (Phase 2/3).
+ * Difficulty and the rate-limit stub's thresholds come from
+ * Admin\Settings; the rate limiter itself stays a simple transient
+ * counter until Signals\RateLimiter (Phase 3) replaces it.
  */
 class ChallengeController {
 
 	private const NAMESPACE = 'nexcaptcha/v1';
 	private const ROUTE     = '/challenge';
 
-	private const DEFAULT_MAXNUMBER = 100000;
-	private const DEFAULT_TTL       = 600;
+	private const DEFAULT_TTL = 600;
 
-	private const RATE_LIMIT_MAX    = 20;
-	private const RATE_LIMIT_WINDOW = 60;
+	private const DIFFICULTY_MAXNUMBERS = array(
+		'low'      => 20000,
+		'balanced' => 100000,
+		'high'     => 250000,
+	);
 
 	public static function register(): void {
 		add_action( 'rest_api_init', array( self::class, 'register_routes' ) );
@@ -61,9 +65,22 @@ class ChallengeController {
 			return self::respond( array( 'code' => 'rate_limited' ), 429 );
 		}
 
-		$payload = PowChallenge::create( $form, self::DEFAULT_MAXNUMBER, self::DEFAULT_TTL );
+		$maxnumber = (int) apply_filters( 'nxc_pow_maxnumber', self::maxnumber(), $form );
+		$ttl       = (int) apply_filters( 'nxc_challenge_ttl', self::DEFAULT_TTL, $form );
+
+		$payload = PowChallenge::create( $form, $maxnumber, $ttl );
 
 		return self::respond( $payload, 200 );
+	}
+
+	private static function maxnumber(): int {
+		$difficulty = (string) Settings::get( 'difficulty', 'balanced' );
+
+		if ( 'custom' === $difficulty ) {
+			return (int) Settings::get( 'custom_maxnumber', 100000 );
+		}
+
+		return self::DIFFICULTY_MAXNUMBERS[ $difficulty ] ?? self::DIFFICULTY_MAXNUMBERS['balanced'];
 	}
 
 	private static function respond( array $data, int $status ): WP_REST_Response {
@@ -74,18 +91,23 @@ class ChallengeController {
 	}
 
 	/**
-	 * Fixed stub: N requests per window per IP-hash. Replaced by
-	 * Signals\RateLimiter (object-cache aware, configurable) in Phase 3.
+	 * Simple stub: N requests per window per IP-hash, thresholds from
+	 * Settings. Replaced by Signals\RateLimiter (object-cache aware) in
+	 * Phase 3.
 	 */
 	private static function is_rate_limited(): bool {
+		$rate_limit = Settings::get( 'rate_limit', array() );
+		$max        = (int) ( $rate_limit['max'] ?? 10 );
+		$window     = (int) ( $rate_limit['window'] ?? 600 );
+
 		$key   = 'nxc_rl_challenge_' . Ip::hash();
 		$count = (int) get_transient( $key );
 
-		if ( $count >= self::RATE_LIMIT_MAX ) {
+		if ( $count >= $max ) {
 			return true;
 		}
 
-		set_transient( $key, $count + 1, self::RATE_LIMIT_WINDOW );
+		set_transient( $key, $count + 1, $window );
 
 		return false;
 	}

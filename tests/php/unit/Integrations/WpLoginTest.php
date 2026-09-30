@@ -14,10 +14,29 @@ use WP_Error;
 
 final class WpLoginTest extends TestCase {
 
+	/** @var array<string, mixed> */
+	private array $settings_override = array();
+
 	protected function setUp(): void {
 		parent::setUp();
-		Functions\when( 'get_option' )->justReturn( base64_encode( str_repeat( 's', 32 ) ) );
+		$this->settings_override = array();
+
+		// alias(), not justReturn(): get_option is called with two
+		// different keys in these tests (nxc_secret via Crypto,
+		// nxc_settings via Settings), so it needs to dispatch on the
+		// argument. A test overrides $this->settings_override before
+		// acting to control what Settings::all() sees.
+		Functions\when( 'get_option' )->alias(
+			function ( string $key ) {
+				if ( 'nxc_secret' === $key ) {
+					return base64_encode( str_repeat( 's', 32 ) );
+				}
+
+				return 'nxc_settings' === $key ? $this->settings_override : false;
+			}
+		);
 		Functions\when( 'update_option' )->justReturn( true );
+		Functions\when( 'add_option' )->justReturn( true );
 		Functions\when( 'do_action' )->justReturn( null );
 		Functions\when( 'apply_filters' )->returnArg( 1 );
 		Functions\when( '__' )->returnArg( 1 );
@@ -50,6 +69,16 @@ final class WpLoginTest extends TestCase {
 		}
 
 		$this->fail( 'Could not solve the test challenge.' );
+	}
+
+	public function test_is_available_reads_the_forms_setting(): void {
+		$this->settings_override = array( 'forms' => array( 'login' => false ) );
+
+		$this->assertFalse( ( new WpLogin() )->is_available() );
+	}
+
+	public function test_is_available_defaults_to_enabled(): void {
+		$this->assertTrue( ( new WpLogin() )->is_available() );
 	}
 
 	public function test_register_wires_the_documented_hooks(): void {
