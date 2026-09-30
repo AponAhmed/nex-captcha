@@ -16,29 +16,36 @@ defined( 'ABSPATH' ) || exit;
 class Verifier {
 
 	public static function verify( string $form_id, array $data ): Result {
+		$mode    = 'invisible';
 		$payload = Token::decode( $data['nxc_token'] ?? null );
 
 		if ( null === $payload ) {
-			return Result::fail( 'malformed_token' );
+			return self::fail( 'malformed_token', $mode, $form_id );
 		}
-
-		$mode = 'invisible';
 
 		$reason = PowChallenge::verify( $payload, $form_id );
 
 		if ( null !== $reason ) {
-			return Result::fail( $reason, $mode );
+			return self::fail( $reason, $mode, $form_id );
 		}
 
 		$challenge = (string) $payload['challenge'];
 
 		if ( ReplayGuard::is_used( $challenge ) ) {
-			return Result::fail( 'replayed', $mode );
+			return self::fail( 'replayed', $mode, $form_id );
 		}
 
 		$ttl = max( 0, PowChallenge::expiry( $payload ) - time() );
 		ReplayGuard::mark_used( $challenge, $ttl );
 
+		do_action( 'nxc_verified', $mode, $form_id );
+
 		return Result::pass( $mode );
+	}
+
+	private static function fail( string $reason, string $mode, string $form_id ): Result {
+		do_action( 'nxc_failed', $reason, $mode, $form_id );
+
+		return Result::fail( $reason, $mode );
 	}
 }

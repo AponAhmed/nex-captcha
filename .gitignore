@@ -12,6 +12,7 @@
 # Testing artifacts
 /tests/e2e/report/
 /tests/e2e/.cache/
+/test-results/
 /.phpunit.cache/
 /.phpunit.result.cache
 /coverage/

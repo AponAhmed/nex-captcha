@@ -47,6 +47,8 @@ final class VerifierTest extends TestCase {
 	}
 
 	public function test_a_malformed_token_fails(): void {
+		Functions\expect( 'do_action' )->zeroOrMoreTimes();
+
 		$result = Verifier::verify( self::FORM, [ 'nxc_token' => 'not-base64-json' ] );
 
 		$this->assertFalse( $result->ok );
@@ -58,6 +60,7 @@ final class VerifierTest extends TestCase {
 
 		Functions\expect( 'get_transient' )->once()->andReturn( false );
 		Functions\expect( 'set_transient' )->once()->andReturn( true );
+		Functions\expect( 'do_action' )->zeroOrMoreTimes();
 
 		$result = Verifier::verify( self::FORM, [ 'nxc_token' => $token ] );
 
@@ -69,10 +72,33 @@ final class VerifierTest extends TestCase {
 		$token = $this->solved_token();
 
 		Functions\expect( 'get_transient' )->once()->andReturn( 1 );
+		Functions\expect( 'do_action' )->zeroOrMoreTimes();
 
 		$result = Verifier::verify( self::FORM, [ 'nxc_token' => $token ] );
 
 		$this->assertFalse( $result->ok );
 		$this->assertSame( 'replayed', $result->reason );
+	}
+
+	public function test_success_fires_nxc_verified(): void {
+		$token = $this->solved_token();
+
+		Functions\expect( 'get_transient' )->once()->andReturn( false );
+		Functions\expect( 'set_transient' )->once()->andReturn( true );
+		Functions\expect( 'do_action' )->once()->with( 'nxc_verified', 'invisible', self::FORM );
+
+		Verifier::verify( self::FORM, [ 'nxc_token' => $token ] );
+
+		// Mockery verifies the expectation above in tearDown(); that alone
+		// doesn't count as a PHPUnit assertion under failOnRisky="true".
+		$this->addToAssertionCount( 1 );
+	}
+
+	public function test_failure_fires_nxc_failed_with_the_reason(): void {
+		Functions\expect( 'do_action' )->once()->with( 'nxc_failed', 'malformed_token', 'invisible', self::FORM );
+
+		Verifier::verify( self::FORM, [ 'nxc_token' => 'not-base64-json' ] );
+
+		$this->addToAssertionCount( 1 );
 	}
 }

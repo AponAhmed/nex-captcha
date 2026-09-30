@@ -28,10 +28,10 @@ final class CryptoTest extends TestCase {
 
 	public function test_get_secret_generates_and_persists_when_missing(): void {
 		Functions\expect( 'get_option' )->once()->with( 'nxc_secret' )->andReturn( false );
-		Functions\expect( 'update_option' )
+		Functions\expect( 'add_option' )
 			->once()
 			->withArgs(
-				static function ( string $key, string $value, bool $autoload ): bool {
+				static function ( string $key, string $value, string $deprecated, bool $autoload ): bool {
 					return 'nxc_secret' === $key && false === $autoload && false !== base64_decode( $value, true );
 				}
 			)
@@ -45,11 +45,28 @@ final class CryptoTest extends TestCase {
 	public function test_get_secret_reuses_a_stored_option(): void {
 		$stored = base64_encode( str_repeat( 'a', 32 ) );
 		Functions\expect( 'get_option' )->once()->with( 'nxc_secret' )->andReturn( $stored );
-		Functions\expect( 'update_option' )->never();
+		Functions\expect( 'add_option' )->never();
 
 		$secret = Crypto::get_secret();
 
 		$this->assertSame( str_repeat( 'a', 32 ), $secret );
+	}
+
+	public function test_get_secret_rereads_the_winning_value_when_it_loses_the_race(): void {
+		// Simulates two concurrent first-ever requests: this process's
+		// add_option() loses (another process's secret is already
+		// stored), so it must use THAT value, not the one it generated.
+		$winner = base64_encode( str_repeat( 'b', 32 ) );
+
+		Functions\expect( 'get_option' )
+			->twice()
+			->with( 'nxc_secret' )
+			->andReturn( false, $winner );
+		Functions\expect( 'add_option' )->once()->andReturn( false );
+
+		$secret = Crypto::get_secret();
+
+		$this->assertSame( str_repeat( 'b', 32 ), $secret );
 	}
 
 	public function test_get_secret_is_cached_across_calls(): void {

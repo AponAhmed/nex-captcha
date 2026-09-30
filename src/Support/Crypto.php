@@ -40,7 +40,24 @@ class Crypto {
 
 		$generated = self::generate_secret();
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- storage encoding, not obfuscation.
-		update_option( 'nxc_secret', base64_encode( $generated ), false );
+		$encoded = base64_encode( $generated );
+
+		// add_option(), not update_option(): it's an atomic insert that
+		// fails (returns false) if the row already exists, instead of an
+		// upsert. Under concurrent first requests (any multi-worker PHP-FPM
+		// setup), two processes can otherwise each generate a different
+		// secret and both "successfully" persist theirs, so whichever
+		// wrote last silently invalidates every signature the other
+		// process already handed out. If we lose the race, re-read
+		// whichever value actually won instead of trusting our own.
+		if ( ! add_option( 'nxc_secret', $encoded, '', false ) ) {
+			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- storage encoding, not obfuscation.
+			$decoded      = base64_decode( (string) get_option( 'nxc_secret' ), true );
+			self::$secret = false !== $decoded ? $decoded : $generated;
+
+			return self::$secret;
+		}
+
 		self::$secret = $generated;
 
 		return self::$secret;
