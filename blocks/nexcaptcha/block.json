@@ -6,7 +6,7 @@
   "category": "widgets",
   "description": "Adds a NexCaptcha challenge to a custom form.",
   "textdomain": "nex-captcha",
-  "editorScript": "file:./build/index.js",
+  "editorScript": "file:./build/edit.tsx.js",
   "render": "file:./render.php",
   "attributes": {
     "formId": {

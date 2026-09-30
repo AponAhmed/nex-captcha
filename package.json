@@ -12,6 +12,7 @@
     "test:js": "vitest run",
     "test:js:watch": "vitest",
     "e2e": "playwright test",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.worker.json",
     "lint:js": "eslint assets/src blocks --ext .ts,.tsx",
     "lint:css": "wp-scripts lint-style assets/src/**/*.css",
     "format": "prettier --write \"assets/src/**/*.{ts,tsx,css}\" \"blocks/**/*.{ts,tsx}\"",

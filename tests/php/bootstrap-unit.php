@@ -5,4 +5,10 @@
  * @package Bitflw\NexCaptcha\Tests
  */
 
+// src/ files guard against direct access with defined('ABSPATH') || exit.
+// There's no real WordPress here, so give them a value to find.
+if ( ! defined( 'ABSPATH' ) ) {
+	define( 'ABSPATH', dirname( __DIR__, 2 ) . '/' );
+}
+
 require_once dirname( __DIR__, 2 ) . '/vendor/autoload.php';

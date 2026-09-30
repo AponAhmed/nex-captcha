@@ -4,6 +4,7 @@
 
 # Build output
 /assets/build/
+/blocks/*/build/
 
 # wp-env local overrides
 .wp-env.override.json
@@ -12,6 +13,7 @@
 /tests/e2e/report/
 /tests/e2e/.cache/
 /.phpunit.cache/
+/.phpunit.result.cache
 /coverage/
 
 # Release artifacts

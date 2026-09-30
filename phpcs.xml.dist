@@ -6,6 +6,7 @@
     <exclude-pattern>/vendor/*</exclude-pattern>
     <exclude-pattern>/node_modules/*</exclude-pattern>
     <exclude-pattern>/assets/build/*</exclude-pattern>
+    <exclude-pattern>*/build/*</exclude-pattern>
     <exclude-pattern>/tests/*</exclude-pattern>
     <exclude-pattern>*.js</exclude-pattern>
     <exclude-pattern>*.css</exclude-pattern>
@@ -21,8 +22,10 @@
 
     <rule ref="WordPress-Extra">
         <exclude name="WordPress.Files.FileName"/>
+        <!-- File-level @package docblocks are redundant on top of PSR-4
+             namespaces and a class-level docblock; skip them project-wide. -->
+        <exclude name="Squiz.Commenting.FileComment.Missing"/>
     </rule>
-    <rule ref="WordPress-Docs"/>
     <rule ref="PHPCompatibilityWP"/>
 
     <rule ref="WordPress.NamingConventions.PrefixAllGlobals">
@@ -34,6 +37,9 @@
                 <element value="Bitflw\NexCaptcha"/>
             </property>
         </properties>
+        <!-- nxc_/Nxc/NXC_ is the project's documented prefix (docs/PLAN.md
+             section 1); it's short by choice, not an oversight. -->
+        <exclude name="WordPress.NamingConventions.PrefixAllGlobals.ShortPrefixPassed"/>
     </rule>
 
     <rule ref="WordPress.Files.FileName">
