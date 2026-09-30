@@ -1,0 +1,29 @@
+# Dependencies
+/vendor/
+/node_modules/
+
+# Build output
+/assets/build/
+
+# wp-env local overrides
+.wp-env.override.json
+
+# Testing artifacts
+/tests/e2e/report/
+/tests/e2e/.cache/
+/.phpunit.cache/
+/coverage/
+
+# Release artifacts
+/nex-captcha.zip
+/*.zip
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Env files
+.env
+.env.local

@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    name: PHPCS
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          tools: composer
+          coverage: none
+      - run: composer install --prefer-dist --no-progress
+      - run: composer lint
+
+  unit:
+    name: PHPUnit (unit, PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['8.0', '8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          tools: composer
+          coverage: none
+      - run: composer install --prefer-dist --no-progress
+      - run: composer test:unit
+
+  integration:
+    name: PHPUnit (integration)
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: true
+          MYSQL_DATABASE: wordpress_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      WP_TESTS_DB_HOST: 127.0.0.1
+      WP_TESTS_DB_NAME: wordpress_test
+      WP_TESTS_DB_USER: root
+      WP_TESTS_DB_PASSWORD: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          tools: composer
+          coverage: none
+      - run: composer install --prefer-dist --no-progress
+      - run: composer test:integration
+
+  build:
+    name: Build & JS tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint:js
+      - run: npm run test:js
+      - run: npm run build
+
+  plugin-check:
+    name: WordPress Plugin Check
+    runs-on: ubuntu-latest
+    needs: [lint, unit, build]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          tools: composer
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: composer install --prefer-dist --no-progress --no-dev
+      - run: npm ci
+      - run: npm run build
+      - uses: wordpress/plugin-check-action@v1
+        with:
+          build-dir: '.'

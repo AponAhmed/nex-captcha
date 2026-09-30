@@ -1,0 +1,36 @@
+{
+  "name": "nex-captcha",
+  "version": "0.1.0",
+  "description": "Self-hosted, privacy-first CAPTCHA for WordPress.",
+  "private": true,
+  "license": "GPL-2.0-or-later",
+  "author": "Bitflw <hello@bitflw.com> (https://bitflw.com)",
+  "scripts": {
+    "build": "node assets/build.mjs && wp-scripts build blocks/nexcaptcha/edit.tsx --output-path=blocks/nexcaptcha/build",
+    "build:widget": "node assets/build.mjs",
+    "watch": "node assets/build.mjs --watch",
+    "test:js": "vitest run",
+    "test:js:watch": "vitest",
+    "e2e": "playwright test",
+    "lint:js": "eslint assets/src blocks --ext .ts,.tsx",
+    "lint:css": "wp-scripts lint-style assets/src/**/*.css",
+    "format": "prettier --write \"assets/src/**/*.{ts,tsx,css}\" \"blocks/**/*.{ts,tsx}\"",
+    "env:start": "wp-env start",
+    "env:stop": "wp-env stop",
+    "env:destroy": "wp-env destroy",
+    "plugin-zip": "wp-scripts plugin-zip"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.47.0",
+    "@typescript-eslint/eslint-plugin": "^8.8.0",
+    "@typescript-eslint/parser": "^8.8.0",
+    "@wordpress/env": "^10.5.0",
+    "@wordpress/scripts": "^30.0.0",
+    "esbuild": "^0.24.0",
+    "eslint": "^8.57.0",
+    "jsdom": "^25.0.1",
+    "prettier": "^3.3.3",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

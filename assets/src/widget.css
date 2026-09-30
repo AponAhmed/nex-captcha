@@ -1,0 +1,14 @@
+.nxc-widget {
+  --nxc-color-bg: #ffffff;
+  --nxc-color-fg: #1a1a1a;
+  --nxc-color-border: #d0d5dd;
+  --nxc-color-accent: #2563eb;
+}
+
+@media (prefers-color-scheme: dark) {
+  .nxc-widget {
+    --nxc-color-bg: #1a1a1a;
+    --nxc-color-fg: #f5f5f5;
+    --nxc-color-border: #3a3a3a;
+  }
+}

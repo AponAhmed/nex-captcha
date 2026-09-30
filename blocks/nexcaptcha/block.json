@@ -1,0 +1,17 @@
+{
+  "$schema": "https://schemas.wp.org/trunk/block.json",
+  "apiVersion": 3,
+  "name": "nexcaptcha/widget",
+  "title": "NexCaptcha",
+  "category": "widgets",
+  "description": "Adds a NexCaptcha challenge to a custom form.",
+  "textdomain": "nex-captcha",
+  "editorScript": "file:./build/index.js",
+  "render": "file:./render.php",
+  "attributes": {
+    "formId": {
+      "type": "string",
+      "default": ""
+    }
+  }
+}
