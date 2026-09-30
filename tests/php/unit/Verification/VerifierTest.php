@@ -46,48 +46,86 @@ final class VerifierTest extends TestCase {
 		$this->fail( 'Could not solve the test challenge.' );
 	}
 
+	/**
+	 * Old enough to clear the default 2-second time trap, with no
+	 * honeypot value -- the baseline for a "clean" submission that only
+	 * differs from a real bot in the field under test.
+	 */
+	private function clean_timing(): array {
+		return array(
+			'nxc_ts' => time() - 10,
+		);
+	}
+
+	public function test_a_honeypot_fill_fails_before_anything_else(): void {
+		Functions\expect( 'do_action' )->zeroOrMoreTimes();
+
+		$data           = $this->clean_timing();
+		$data['nxc_hp'] = 'bots fill this in';
+
+		$result = Verifier::verify( self::FORM, $data );
+
+		$this->assertFalse( $result->ok );
+		$this->assertSame( 'honeypot', $result->reason );
+	}
+
+	public function test_a_too_fast_submission_fails(): void {
+		Functions\expect( 'do_action' )->zeroOrMoreTimes();
+
+		$result = Verifier::verify( self::FORM, array( 'nxc_ts' => time() ) );
+
+		$this->assertFalse( $result->ok );
+		$this->assertSame( 'too_fast', $result->reason );
+	}
+
 	public function test_a_malformed_token_fails(): void {
 		Functions\expect( 'do_action' )->zeroOrMoreTimes();
 
-		$result = Verifier::verify( self::FORM, [ 'nxc_token' => 'not-base64-json' ] );
+		$data                = $this->clean_timing();
+		$data['nxc_token']   = 'not-base64-json';
+
+		$result = Verifier::verify( self::FORM, $data );
 
 		$this->assertFalse( $result->ok );
 		$this->assertSame( 'malformed_token', $result->reason );
 	}
 
 	public function test_a_valid_solved_token_passes_and_marks_it_used(): void {
-		$token = $this->solved_token();
+		$data              = $this->clean_timing();
+		$data['nxc_token'] = $this->solved_token();
 
 		Functions\expect( 'get_transient' )->once()->andReturn( false );
 		Functions\expect( 'set_transient' )->once()->andReturn( true );
 		Functions\expect( 'do_action' )->zeroOrMoreTimes();
 
-		$result = Verifier::verify( self::FORM, [ 'nxc_token' => $token ] );
+		$result = Verifier::verify( self::FORM, $data );
 
 		$this->assertTrue( $result->ok );
 		$this->assertSame( 'invisible', $result->mode );
 	}
 
 	public function test_a_replayed_token_fails(): void {
-		$token = $this->solved_token();
+		$data              = $this->clean_timing();
+		$data['nxc_token'] = $this->solved_token();
 
 		Functions\expect( 'get_transient' )->once()->andReturn( 1 );
 		Functions\expect( 'do_action' )->zeroOrMoreTimes();
 
-		$result = Verifier::verify( self::FORM, [ 'nxc_token' => $token ] );
+		$result = Verifier::verify( self::FORM, $data );
 
 		$this->assertFalse( $result->ok );
 		$this->assertSame( 'replayed', $result->reason );
 	}
 
 	public function test_success_fires_nxc_verified(): void {
-		$token = $this->solved_token();
+		$data              = $this->clean_timing();
+		$data['nxc_token'] = $this->solved_token();
 
 		Functions\expect( 'get_transient' )->once()->andReturn( false );
 		Functions\expect( 'set_transient' )->once()->andReturn( true );
 		Functions\expect( 'do_action' )->once()->with( 'nxc_verified', 'invisible', self::FORM );
 
-		Verifier::verify( self::FORM, [ 'nxc_token' => $token ] );
+		Verifier::verify( self::FORM, $data );
 
 		// Mockery verifies the expectation above in tearDown(); that alone
 		// doesn't count as a PHPUnit assertion under failOnRisky="true".
@@ -97,7 +135,10 @@ final class VerifierTest extends TestCase {
 	public function test_failure_fires_nxc_failed_with_the_reason(): void {
 		Functions\expect( 'do_action' )->once()->with( 'nxc_failed', 'malformed_token', 'invisible', self::FORM );
 
-		Verifier::verify( self::FORM, [ 'nxc_token' => 'not-base64-json' ] );
+		$data              = $this->clean_timing();
+		$data['nxc_token'] = 'not-base64-json';
+
+		Verifier::verify( self::FORM, $data );
 
 		$this->addToAssertionCount( 1 );
 	}

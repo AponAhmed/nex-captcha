@@ -207,6 +207,14 @@ class SettingsPage {
 					<?php esc_html_e( 'seconds, per IP.', 'nex-captcha' ); ?>
 				</td>
 			</tr>
+			<tr>
+				<th scope="row"><label for="nxc-time-trap"><?php esc_html_e( 'Minimum time to submit', 'nex-captcha' ); ?></label></th>
+				<td>
+					<input type="number" min="0" name="<?php echo esc_attr( self::OPTION ); ?>[time_trap_seconds]" id="nxc-time-trap" value="<?php echo esc_attr( (string) $settings['time_trap_seconds'] ); ?>" class="small-text" />
+					<?php esc_html_e( 'seconds.', 'nex-captcha' ); ?>
+					<p class="description"><?php esc_html_e( 'Submissions faster than this after the form renders are rejected as bots.', 'nex-captcha' ); ?></p>
+				</td>
+			</tr>
 		</table>
 		<?php
 	}

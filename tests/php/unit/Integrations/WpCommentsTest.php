@@ -40,7 +40,7 @@ final class WpCommentsTest extends TestCase {
 	}
 
 	protected function tearDown(): void {
-		unset( $_POST['nxc_token'] );
+		unset( $_POST['nxc_token'], $_POST['nxc_ts'] );
 		$this->reset_secret_cache();
 		parent::tearDown();
 	}
@@ -100,6 +100,7 @@ final class WpCommentsTest extends TestCase {
 		Functions\when( 'set_transient' )->justReturn( true );
 
 		$_POST['nxc_token'] = $this->solved_token();
+		$_POST['nxc_ts']    = time() - 10;
 
 		$commentdata = array( 'comment_content' => 'hello' );
 		$result      = ( new WpComments() )->validate( $commentdata );

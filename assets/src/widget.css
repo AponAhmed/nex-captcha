@@ -12,3 +12,14 @@
     --nxc-color-border: #3a3a3a;
   }
 }
+
+/* Honeypot: off-screen, not display:none -- some scrapers specifically
+   skip display:none fields, so this stays hidden from real visitors
+   while still being present for a bot that fills every field it finds. */
+.nxc-widget__hp {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}

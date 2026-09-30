@@ -5,7 +5,7 @@ namespace Bitflw\NexCaptcha\Rest;
 
 use Bitflw\NexCaptcha\Admin\Settings;
 use Bitflw\NexCaptcha\Challenge\PowChallenge;
-use Bitflw\NexCaptcha\Support\Ip;
+use Bitflw\NexCaptcha\Signals\RateLimiter;
 use WP_REST_Request;
 use WP_REST_Response;
 use WP_REST_Server;
@@ -15,9 +15,8 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Registers and handles GET /wp-json/nexcaptcha/v1/challenge.
  *
- * Difficulty and the rate-limit stub's thresholds come from
- * Admin\Settings; the rate limiter itself stays a simple transient
- * counter until Signals\RateLimiter (Phase 3) replaces it.
+ * Difficulty comes from Admin\Settings; rate limiting delegates to
+ * Signals\RateLimiter.
  */
 class ChallengeController {
 
@@ -90,24 +89,14 @@ class ChallengeController {
 		return $response;
 	}
 
-	/**
-	 * Simple stub: N requests per window per IP-hash, thresholds from
-	 * Settings. Replaced by Signals\RateLimiter (object-cache aware) in
-	 * Phase 3.
-	 */
 	private static function is_rate_limited(): bool {
-		$rate_limit = Settings::get( 'rate_limit', array() );
-		$max        = (int) ( $rate_limit['max'] ?? 10 );
-		$window     = (int) ( $rate_limit['window'] ?? 600 );
+		$bucket = RateLimiter::challenge_bucket();
 
-		$key   = 'nxc_rl_challenge_' . Ip::hash();
-		$count = (int) get_transient( $key );
-
-		if ( $count >= $max ) {
+		if ( RateLimiter::is_limited( $bucket ) ) {
 			return true;
 		}
 
-		set_transient( $key, $count + 1, $window );
+		RateLimiter::hit( $bucket );
 
 		return false;
 	}

@@ -4,6 +4,8 @@ declare( strict_types=1 );
 namespace Bitflw\NexCaptcha\Verification;
 
 use Bitflw\NexCaptcha\Challenge\PowChallenge;
+use Bitflw\NexCaptcha\Signals\Honeypot;
+use Bitflw\NexCaptcha\Signals\TimeTrap;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -16,7 +18,18 @@ defined( 'ABSPATH' ) || exit;
 class Verifier {
 
 	public static function verify( string $form_id, array $data ): Result {
-		$mode    = 'invisible';
+		$mode = 'invisible';
+
+		// Cheapest, most certain signals first -- no reason to touch
+		// crypto if the honeypot alone already gives the answer away.
+		foreach ( array( new Honeypot(), new TimeTrap() ) as $signal ) {
+			$reason = $signal->check( $data );
+
+			if ( null !== $reason ) {
+				return self::fail( $reason, $mode, $form_id );
+			}
+		}
+
 		$payload = Token::decode( $data['nxc_token'] ?? null );
 
 		if ( null === $payload ) {

@@ -42,7 +42,7 @@ final class WpRegisterTest extends TestCase {
 	}
 
 	protected function tearDown(): void {
-		unset( $GLOBALS['pagenow'], $_SERVER['REQUEST_METHOD'], $_POST['nxc_token'] );
+		unset( $GLOBALS['pagenow'], $_SERVER['REQUEST_METHOD'], $_POST['nxc_token'], $_POST['nxc_ts'] );
 		$this->reset_secret_cache();
 		parent::tearDown();
 	}
@@ -100,6 +100,7 @@ final class WpRegisterTest extends TestCase {
 		Functions\when( 'set_transient' )->justReturn( true );
 
 		$_POST['nxc_token'] = $this->solved_token();
+		$_POST['nxc_ts']    = time() - 10;
 
 		$errors = new WP_Error();
 		$result = ( new WpRegister() )->validate( $errors, 'someone', 'someone@example.com' );
