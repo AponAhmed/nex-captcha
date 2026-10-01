@@ -65,6 +65,12 @@ class SettingsPage {
 				<form method="post" action="options.php">
 					<?php
 					settings_fields( self::SLUG );
+					// Tells Settings::sanitize() which tab's fields are
+					// actually present in this particular submit -- see
+					// its own docblock for why that matters.
+					?>
+					<input type="hidden" name="<?php echo esc_attr( self::OPTION ); ?>[_section]" value="<?php echo esc_attr( $tab ); ?>" />
+					<?php
 					self::render_tab( $tab, Settings::all() );
 					submit_button();
 					?>

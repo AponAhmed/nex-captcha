@@ -68,7 +68,12 @@ final class SettingsTest extends TestCase {
 	public function test_sanitize_falls_back_to_the_current_value_for_an_invalid_difficulty(): void {
 		Functions\expect( 'get_option' )->once()->andReturn( array( 'difficulty' => 'high' ) );
 
-		$sanitized = Settings::sanitize( array( 'difficulty' => 'not-a-real-difficulty' ) );
+		$sanitized = Settings::sanitize(
+			array(
+				'_section'   => 'general',
+				'difficulty' => 'not-a-real-difficulty',
+			)
+		);
 
 		$this->assertSame( 'high', $sanitized['difficulty'] );
 	}
@@ -76,7 +81,12 @@ final class SettingsTest extends TestCase {
 	public function test_sanitize_accepts_a_valid_difficulty(): void {
 		Functions\expect( 'get_option' )->once()->andReturn( array() );
 
-		$sanitized = Settings::sanitize( array( 'difficulty' => 'low' ) );
+		$sanitized = Settings::sanitize(
+			array(
+				'_section'   => 'general',
+				'difficulty' => 'low',
+			)
+		);
 
 		$this->assertSame( 'low', $sanitized['difficulty'] );
 	}
@@ -86,7 +96,8 @@ final class SettingsTest extends TestCase {
 
 		$sanitized = Settings::sanitize(
 			array(
-				'forms' => array(
+				'_section' => 'forms',
+				'forms'    => array(
 					'login'    => '1',
 					'comments' => '',
 				),
@@ -100,11 +111,63 @@ final class SettingsTest extends TestCase {
 		$this->assertFalse( $sanitized['forms']['register'] );
 	}
 
+	/**
+	 * The multi-tab admin UI means a settings save for ANY OTHER tab
+	 * must leave the Forms tab's own values exactly as they were --
+	 * this is the regression test for the bug that originally forced
+	 * this whole _section-gated design: saving the Forms tab used to
+	 * silently wipe General/Security's fields back to empty/false, and
+	 * vice versa.
+	 */
+	public function test_sanitize_leaves_other_sections_untouched(): void {
+		Functions\expect( 'get_option' )->once()->andReturn(
+			array(
+				'escalation'   => true,
+				'forms'        => array(
+					'login'        => true,
+					'register'     => true,
+					'lostpassword' => true,
+					'comments'     => true,
+				),
+				'bypass_roles' => array( 'administrator' ),
+			)
+		);
+
+		// Submitting the Forms tab alone -- no escalation/bypass_roles
+		// fields present at all, same as that tab's real <form>.
+		$sanitized = Settings::sanitize(
+			array(
+				'_section' => 'forms',
+				'forms'    => array( 'login' => '1' ),
+			)
+		);
+
+		$this->assertTrue( $sanitized['escalation'] );
+		$this->assertSame( array( 'administrator' ), $sanitized['bypass_roles'] );
+	}
+
+	public function test_sanitize_with_an_unrecognized_section_changes_nothing(): void {
+		Functions\expect( 'get_option' )->once()->andReturn(
+			array(
+				'difficulty' => 'high',
+				'forms'      => array( 'login' => true ),
+			)
+		);
+
+		$sanitized = Settings::sanitize( array( 'difficulty' => 'low' ) );
+
+		$this->assertSame( 'high', $sanitized['difficulty'] );
+		$this->assertTrue( $sanitized['forms']['login'] );
+	}
+
 	public function test_sanitize_filters_out_invalid_allowlist_entries(): void {
 		Functions\expect( 'get_option' )->once()->andReturn( array() );
 
 		$sanitized = Settings::sanitize(
-			array( 'allowlist' => "203.0.113.5\nnot-an-ip\n203.0.113.0/24" )
+			array(
+				'_section'  => 'security',
+				'allowlist' => "203.0.113.5\nnot-an-ip\n203.0.113.0/24",
+			)
 		);
 
 		$this->assertSame( array( '203.0.113.5', '203.0.113.0/24' ), $sanitized['allowlist'] );
@@ -114,7 +177,10 @@ final class SettingsTest extends TestCase {
 		Functions\expect( 'get_option' )->once()->andReturn( array() );
 
 		$sanitized = Settings::sanitize(
-			array( 'bypass_roles' => array( 'Administrator', 'administrator', 'Editor' ) )
+			array(
+				'_section'     => 'security',
+				'bypass_roles' => array( 'Administrator', 'administrator', 'Editor' ),
+			)
 		);
 
 		$this->assertSame( array( 'administrator', 'editor' ), $sanitized['bypass_roles'] );
@@ -123,7 +189,15 @@ final class SettingsTest extends TestCase {
 	public function test_sanitize_falls_back_to_the_current_value_for_a_non_positive_rate_limit(): void {
 		Functions\expect( 'get_option' )->once()->andReturn( array( 'rate_limit' => array( 'max' => 10, 'window' => 600 ) ) );
 
-		$sanitized = Settings::sanitize( array( 'rate_limit' => array( 'max' => -5, 'window' => 'nope' ) ) );
+		$sanitized = Settings::sanitize(
+			array(
+				'_section'   => 'security',
+				'rate_limit' => array(
+					'max'    => -5,
+					'window' => 'nope',
+				),
+			)
+		);
 
 		$this->assertSame( 10, $sanitized['rate_limit']['max'] );
 		$this->assertSame( 600, $sanitized['rate_limit']['window'] );

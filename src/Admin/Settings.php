@@ -89,37 +89,49 @@ class Settings {
 	}
 
 	/**
+	 * SettingsPage renders General/Forms/Security as three SEPARATE
+	 * <form>s (one per tab), each posting only its own fields -- but
+	 * this is the sanitize_callback for a single shared option, called
+	 * fresh on every one of those submits. Without knowing which tab
+	 * sent $input, "a field this tab doesn't own is absent" is
+	 * indistinguishable from "the user unchecked/cleared it", and every
+	 * save would wipe every OTHER tab's fields back to their
+	 * empty/false default. SettingsPage writes `_section` as a hidden
+	 * field naming the submitting tab; only that tab's own fields are
+	 * processed from $input, everything else is carried over from the
+	 * currently stored value untouched.
+	 *
 	 * @param array<string, mixed> $input
 	 * @return array<string, mixed>
 	 */
 	public static function sanitize( array $input ): array {
 		$current = self::all();
+		$section = is_string( $input['_section'] ?? null ) ? $input['_section'] : '';
 
-		return array(
-			'schema_version'    => self::SCHEMA_VERSION,
-			'mode'              => self::sanitize_enum( $input['mode'] ?? null, self::MODES, $current['mode'] ),
-			'difficulty'        => self::sanitize_enum( $input['difficulty'] ?? null, self::DIFFICULTIES, $current['difficulty'] ),
-			'custom_maxnumber'  => self::sanitize_positive_int( $input['custom_maxnumber'] ?? null, $current['custom_maxnumber'] ),
-			'escalation'        => ! empty( $input['escalation'] ),
-			'forms'             => self::sanitize_forms( $input['forms'] ?? array() ),
-			'theme'             => self::sanitize_enum( $input['theme'] ?? null, self::THEMES, $current['theme'] ),
-			'time_trap_seconds' => self::sanitize_positive_int( $input['time_trap_seconds'] ?? null, $current['time_trap_seconds'] ),
-			'rate_limit'        => array(
+		$result                   = $current;
+		$result['schema_version'] = self::SCHEMA_VERSION;
+
+		if ( 'general' === $section ) {
+			$result['difficulty']       = self::sanitize_enum( $input['difficulty'] ?? null, self::DIFFICULTIES, $current['difficulty'] );
+			$result['custom_maxnumber'] = self::sanitize_positive_int( $input['custom_maxnumber'] ?? null, $current['custom_maxnumber'] );
+			$result['escalation']       = ! empty( $input['escalation'] );
+		}
+
+		if ( 'forms' === $section ) {
+			$result['forms'] = self::sanitize_forms( $input['forms'] ?? array() );
+		}
+
+		if ( 'security' === $section ) {
+			$result['allowlist']         = self::sanitize_ip_list( $input['allowlist'] ?? array() );
+			$result['bypass_roles']      = self::sanitize_roles( $input['bypass_roles'] ?? array() );
+			$result['rate_limit']        = array(
 				'max'    => self::sanitize_positive_int( $input['rate_limit']['max'] ?? null, $current['rate_limit']['max'] ),
 				'window' => self::sanitize_positive_int( $input['rate_limit']['window'] ?? null, $current['rate_limit']['window'] ),
-			),
-			'allowlist'         => self::sanitize_ip_list( $input['allowlist'] ?? array() ),
-			'bypass_roles'      => self::sanitize_roles( $input['bypass_roles'] ?? array() ),
-			'trusted_proxies'   => self::sanitize_ip_list( $input['trusted_proxies'] ?? array() ),
-			'fail_mode'         => array(
-				'login'    => self::sanitize_enum( $input['fail_mode']['login'] ?? null, self::FAIL_MODES, $current['fail_mode']['login'] ),
-				'comments' => self::sanitize_enum( $input['fail_mode']['comments'] ?? null, self::FAIL_MODES, $current['fail_mode']['comments'] ),
-			),
-			'logging'           => array(
-				'enabled'        => ! empty( $input['logging']['enabled'] ),
-				'retention_days' => self::sanitize_positive_int( $input['logging']['retention_days'] ?? null, $current['logging']['retention_days'] ),
-			),
-		);
+			);
+			$result['time_trap_seconds'] = self::sanitize_positive_int( $input['time_trap_seconds'] ?? null, $current['time_trap_seconds'] );
+		}
+
+		return $result;
 	}
 
 	/**
