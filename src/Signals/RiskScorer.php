@@ -8,14 +8,14 @@ use Bitflw\NexCaptcha\Admin\Settings;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Combines signals into a 0-100 risk score, currently used to scale PoW
- * difficulty. Mode escalation (switching to the slider) needs
- * Challenge\SliderChallenge, which doesn't exist yet -- that half of
- * this class's documented job lands in a later phase.
+ * Combines signals into a 0-100 risk score, used both to scale PoW
+ * difficulty and to decide mode escalation (invisible -> slider).
  *
  * The only signal genuinely available before a challenge is even
  * issued is proximity to the rate limit; richer historical signals
- * need Logging\EventLogger, also not built yet.
+ * need Logging\EventLogger, which is currently write-only (no
+ * read-back query exists yet) -- a later enhancement, not required
+ * for this signal to be useful today.
  */
 class RiskScorer {
 
@@ -45,5 +45,18 @@ class RiskScorer {
 		$multiplier = 1 + ( $risk / 100 ) * ( self::MAX_MULTIPLIER - 1 );
 
 		return (int) min( self::CEILING, round( $maxnumber * $multiplier ) );
+	}
+
+	/**
+	 * Shares ESCALATION_THRESHOLD with adjust_maxnumber() rather than a
+	 * separate configurable setting -- docs/PLAN.md section 2.4 only
+	 * calls for an escalation on/off switch, not a tunable threshold.
+	 */
+	public static function mode(): string {
+		if ( ! Settings::get( 'escalation', true ) ) {
+			return 'invisible';
+		}
+
+		return self::score() >= self::ESCALATION_THRESHOLD ? 'slider' : 'invisible';
 	}
 }

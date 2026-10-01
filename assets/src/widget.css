@@ -23,3 +23,40 @@
   height: 1px;
   overflow: hidden;
 }
+
+/* Matches Challenge\SliderChallenge's own WIDTH/HEIGHT (300x150). */
+.nxc-widget__slider {
+  position: relative;
+  width: 300px;
+  height: 150px;
+  max-width: 100%;
+  border: 1px solid var(--nxc-color-border);
+}
+
+.nxc-widget__slider-bg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* PIECE_SIZE (40px) to match the backend-generated images exactly. */
+.nxc-widget__slider-piece {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  background-size: cover;
+  border: 1px solid #ffffff;
+  cursor: grab;
+  touch-action: none;
+}
+
+.nxc-widget__slider-piece:active {
+  cursor: grabbing;
+}
+
+/* The one control on this widget a keyboard user must actually
+   operate -- needs a clearly visible focus ring. */
+.nxc-widget__slider-piece:focus-visible {
+  outline: 2px solid var(--nxc-color-accent);
+  outline-offset: 2px;
+}

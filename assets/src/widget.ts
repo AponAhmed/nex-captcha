@@ -1,21 +1,26 @@
 /**
  * Finds .nxc-widget elements, fetches a challenge on first focus/view,
- * solves it in a Web Worker and fills the hidden nxc_token input before
- * the form submits. Refreshes the token before it expires.
+ * and either solves it in a Web Worker (invisible PoW) or hands it off
+ * to slider.ts (slider puzzle) before the form submits. Refreshes
+ * before the challenge expires, for whichever mode was last served.
  */
+
+import { renderSlider, type SliderPayload } from './slider';
 
 // Injected at build time (assets/build.mjs) with worker.ts's bundled
 // source, so the worker runs from a Blob URL with no extra request.
 declare const NXC_WORKER_SOURCE: string;
 
-interface ChallengePayload {
-  mode: string;
+interface PowPayload {
+  mode: 'invisible';
   algorithm: string;
   challenge: string;
   maxnumber: number;
   salt: string;
   signature: string;
 }
+
+type ChallengePayload = PowPayload | SliderPayload;
 
 interface SolvedMessage {
   type: 'solved';
@@ -90,7 +95,7 @@ function parseExpiry(salt: string): number | null {
   return expires ? parseInt(expires, 10) : null;
 }
 
-function runWorker(payload: ChallengePayload): Promise<SolvedMessage | null> {
+function runWorker(payload: PowPayload): Promise<SolvedMessage | null> {
   return new Promise((resolve) => {
     const blob = new Blob([NXC_WORKER_SOURCE], { type: 'application/javascript' });
     const url = URL.createObjectURL(blob);
@@ -144,6 +149,12 @@ async function solveWidget(widget: HTMLElement): Promise<void> {
     return;
   }
 
+  if (payload.mode === 'slider') {
+    renderSlider(widget, payload);
+    scheduleRefresh(widget, payload.salt);
+    return;
+  }
+
   const solved = await runWorker(payload);
 
   if (!solved) {
@@ -163,7 +174,16 @@ async function solveWidget(widget: HTMLElement): Promise<void> {
   input.value = btoa(JSON.stringify(token));
   setStatus(widget, 'Verified.');
 
-  const expires = parseExpiry(payload.salt);
+  scheduleRefresh(widget, payload.salt);
+}
+
+/**
+ * Shared by both modes: the challenge's own salt-embedded expiry
+ * decides when to re-fetch, regardless of whether that re-fetch ends
+ * up re-solving a PoW challenge or re-rendering a slider puzzle.
+ */
+function scheduleRefresh(widget: HTMLElement, salt: string): void {
+  const expires = parseExpiry(salt);
   if (expires) {
     const remaining = Math.max(expires * 1000 - Date.now() - REFRESH_BUFFER_MS, MIN_REFRESH_MS);
     setTimeout(() => {

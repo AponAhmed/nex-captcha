@@ -6,6 +6,7 @@ namespace Bitflw\NexCaptcha\Rest;
 use Bitflw\NexCaptcha\Admin\Settings;
 use Bitflw\NexCaptcha\Challenge\ChallengeFactory;
 use Bitflw\NexCaptcha\Signals\RateLimiter;
+use Bitflw\NexCaptcha\Signals\RiskScorer;
 use WP_REST_Request;
 use WP_REST_Response;
 use WP_REST_Server;
@@ -16,7 +17,7 @@ defined( 'ABSPATH' ) || exit;
  * Registers and handles GET /wp-json/nexcaptcha/v1/challenge.
  *
  * Difficulty comes from Admin\Settings; rate limiting delegates to
- * Signals\RateLimiter.
+ * Signals\RateLimiter; mode escalation delegates to Signals\RiskScorer.
  */
 class ChallengeController {
 
@@ -70,14 +71,7 @@ class ChallengeController {
 			return self::respond( array( 'code' => 'rate_limited' ), 429 );
 		}
 
-		$mode = (string) $request->get_param( 'mode' );
-
-		// "The server may upgrade it, never downgrade it" (docs/PLAN.md
-		// section 4.4) -- there's no auto-escalation yet to conflict with,
-		// so any explicitly requested, known mode is simply honored as-is.
-		if ( '' === $mode || ! ChallengeFactory::is_known_mode( $mode ) ) {
-			$mode = ChallengeFactory::DEFAULT_MODE;
-		}
+		$mode = self::resolve_mode( (string) $request->get_param( 'mode' ) );
 
 		$maxnumber = (int) apply_filters( 'nxc_pow_maxnumber', self::maxnumber(), $form );
 		$ttl       = (int) apply_filters( 'nxc_challenge_ttl', self::DEFAULT_TTL, $form );
@@ -85,6 +79,24 @@ class ChallengeController {
 		$payload = ChallengeFactory::create( $mode, $form, $maxnumber, $ttl );
 
 		return self::respond( $payload, 200 );
+	}
+
+	/**
+	 * "The server may upgrade it, never downgrade it" (docs/PLAN.md
+	 * section 4.4): with only two modes in play this is a plain OR --
+	 * slider if the client explicitly asked for it, or if RiskScorer's
+	 * own signals say it should be, whichever came first never loses.
+	 */
+	private static function resolve_mode( string $requested ): string {
+		if ( '' !== $requested && ! ChallengeFactory::is_known_mode( $requested ) ) {
+			$requested = ChallengeFactory::DEFAULT_MODE;
+		}
+
+		if ( 'slider' === $requested || 'slider' === RiskScorer::mode() ) {
+			return 'slider';
+		}
+
+		return '' === $requested ? ChallengeFactory::DEFAULT_MODE : $requested;
 	}
 
 	private static function maxnumber(): int {

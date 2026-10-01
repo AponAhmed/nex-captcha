@@ -143,6 +143,16 @@ class SettingsPage {
 					<p class="description"><?php esc_html_e( 'Only used when Difficulty is set to Custom.', 'nex-captcha' ); ?></p>
 				</td>
 			</tr>
+			<tr>
+				<th scope="row"><?php esc_html_e( 'Escalation', 'nex-captcha' ); ?></th>
+				<td>
+					<label for="nxc-escalation">
+						<input type="checkbox" name="<?php echo esc_attr( self::OPTION ); ?>[escalation]" id="nxc-escalation" value="1" <?php checked( $settings['escalation'] ); ?> />
+						<?php esc_html_e( 'Switch suspicious requests to the slider puzzle', 'nex-captcha' ); ?>
+					</label>
+					<p class="description"><?php esc_html_e( 'When a visitor\'s IP gets close to the rate limit, serve the slider puzzle instead of the invisible challenge.', 'nex-captcha' ); ?></p>
+				</td>
+			</tr>
 		</table>
 		<?php
 	}

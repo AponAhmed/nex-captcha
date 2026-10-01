@@ -71,4 +71,36 @@ final class RiskScorerTest extends TestCase {
 
 		$this->assertSame( 250000, RiskScorer::adjust_maxnumber( 100000, 'login' ) );
 	}
+
+	public function test_mode_is_invisible_below_the_escalation_threshold(): void {
+		Functions\expect( 'get_transient' )->once()->andReturn( 2 ); // score 20
+
+		$this->assertSame( 'invisible', RiskScorer::mode() );
+	}
+
+	public function test_mode_escalates_to_slider_at_the_threshold(): void {
+		Functions\expect( 'get_transient' )->once()->andReturn( 5 ); // score 50
+
+		$this->assertSame( 'slider', RiskScorer::mode() );
+	}
+
+	/**
+	 * mode() short-circuits on the escalation flag before ever reading
+	 * the rate-limit transient -- score() is irrelevant when disabled,
+	 * so get_transient() is deliberately not expected here at all.
+	 */
+	public function test_mode_stays_invisible_when_escalation_is_disabled(): void {
+		Functions\when( 'get_option' )->alias(
+			static function ( string $key ) {
+				return 'nxc_secret' === $key
+					? base64_encode( str_repeat( 's', 32 ) )
+					: array(
+						'escalation' => false,
+						'rate_limit' => array( 'max' => 10 ),
+					);
+			}
+		);
+
+		$this->assertSame( 'invisible', RiskScorer::mode() );
+	}
 }
