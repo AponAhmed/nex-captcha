@@ -140,6 +140,19 @@ function runWorker(payload: PowPayload): Promise<SolvedMessage | null> {
   });
 }
 
+/**
+ * crypto.subtle (needed by worker.ts's SHA-256 loop) only exists in a
+ * secure context -- HTTPS, or literally "localhost". A site served over
+ * plain HTTP would otherwise leave every visitor's invisible-PoW
+ * challenge permanently unsolvable with no visible error: the worker
+ * throws, nxc_token never gets filled, and every submission fails as a
+ * malformed token. Falling back to the slider (which needs no Web
+ * Crypto at all) keeps login possible either way.
+ */
+export function hasWebCrypto(): boolean {
+  return typeof crypto !== 'undefined' && typeof crypto.subtle !== 'undefined';
+}
+
 async function solveWidget(widget: HTMLElement, forcedMode?: string): Promise<void> {
   const form = widget.dataset.form;
   const restUrl = widget.dataset.restUrl;
@@ -149,10 +162,12 @@ async function solveWidget(widget: HTMLElement, forcedMode?: string): Promise<vo
     return;
   }
 
+  const effectiveMode = forcedMode ?? (hasWebCrypto() ? undefined : 'slider');
+
   let payload: ChallengePayload;
 
   try {
-    const modeParam = forcedMode ? `&mode=${encodeURIComponent(forcedMode)}` : '';
+    const modeParam = effectiveMode ? `&mode=${encodeURIComponent(effectiveMode)}` : '';
     const response = await fetch(`${restUrl}challenge?form=${encodeURIComponent(form)}${modeParam}`, {
       credentials: 'omit',
     });
@@ -184,6 +199,16 @@ async function solveWidget(widget: HTMLElement, forcedMode?: string): Promise<vo
   if (payload.mode === 'math') {
     renderMath(widget, payload);
     scheduleRefresh(widget, payload.salt);
+    return;
+  }
+
+  // Defense in depth: the server was already asked for slider above
+  // when Web Crypto is missing, but if an 'invisible' payload comes
+  // back anyway, attempting the worker would just fail silently with
+  // nxc_token forever empty -- surface it instead.
+  if (!hasWebCrypto()) {
+    console.warn('NexCaptcha: Web Crypto is unavailable in this context; cannot solve the invisible challenge.');
+    setStatus(widget, 'Verification unavailable.');
     return;
   }
 

@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import { interactionInput, trackInteraction } from './widget';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { hasWebCrypto, interactionInput, trackInteraction } from './widget';
 
 function buildFixture(): { widget: HTMLElement; form: HTMLFormElement } {
   document.body.innerHTML = `
@@ -63,5 +63,29 @@ describe('trackInteraction', () => {
     const widget = document.querySelector('.nxc-widget') as HTMLElement;
 
     expect(() => trackInteraction(widget)).not.toThrow();
+  });
+});
+
+describe('hasWebCrypto', () => {
+  const originalCrypto = globalThis.crypto;
+
+  afterEach(() => {
+    vi.stubGlobal('crypto', originalCrypto);
+  });
+
+  it('is true in jsdom\'s default environment (crypto.subtle present)', () => {
+    expect(hasWebCrypto()).toBe(true);
+  });
+
+  it('is false when crypto.subtle is missing, as in a non-secure context', () => {
+    vi.stubGlobal('crypto', {});
+
+    expect(hasWebCrypto()).toBe(false);
+  });
+
+  it('is false when crypto itself is undefined', () => {
+    vi.stubGlobal('crypto', undefined);
+
+    expect(hasWebCrypto()).toBe(false);
   });
 });
