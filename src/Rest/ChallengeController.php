@@ -4,7 +4,7 @@ declare( strict_types=1 );
 namespace Bitflw\NexCaptcha\Rest;
 
 use Bitflw\NexCaptcha\Admin\Settings;
-use Bitflw\NexCaptcha\Challenge\PowChallenge;
+use Bitflw\NexCaptcha\Challenge\ChallengeFactory;
 use Bitflw\NexCaptcha\Signals\RateLimiter;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -48,6 +48,10 @@ class ChallengeController {
 						'required' => true,
 						'type'     => 'string',
 					),
+					'mode' => array(
+						'required' => false,
+						'type'     => 'string',
+					),
 				),
 			)
 		);
@@ -66,10 +70,19 @@ class ChallengeController {
 			return self::respond( array( 'code' => 'rate_limited' ), 429 );
 		}
 
+		$mode = (string) $request->get_param( 'mode' );
+
+		// "The server may upgrade it, never downgrade it" (docs/PLAN.md
+		// section 4.4) -- there's no auto-escalation yet to conflict with,
+		// so any explicitly requested, known mode is simply honored as-is.
+		if ( '' === $mode || ! ChallengeFactory::is_known_mode( $mode ) ) {
+			$mode = ChallengeFactory::DEFAULT_MODE;
+		}
+
 		$maxnumber = (int) apply_filters( 'nxc_pow_maxnumber', self::maxnumber(), $form );
 		$ttl       = (int) apply_filters( 'nxc_challenge_ttl', self::DEFAULT_TTL, $form );
 
-		$payload = PowChallenge::create( $form, $maxnumber, $ttl );
+		$payload = ChallengeFactory::create( $mode, $form, $maxnumber, $ttl );
 
 		return self::respond( $payload, 200 );
 	}

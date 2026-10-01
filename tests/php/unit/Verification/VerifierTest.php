@@ -5,10 +5,12 @@ namespace Bitflw\NexCaptcha\Tests\Unit\Verification;
 
 use Bitflw\NexCaptcha\Challenge\MathChallenge;
 use Bitflw\NexCaptcha\Challenge\PowChallenge;
+use Bitflw\NexCaptcha\Challenge\SliderChallenge;
 use Bitflw\NexCaptcha\Support\Crypto;
 use Bitflw\NexCaptcha\Tests\TestCase;
 use Bitflw\NexCaptcha\Verification\Verifier;
 use Brain\Monkey\Functions;
+use ReflectionClass;
 use ReflectionProperty;
 
 final class VerifierTest extends TestCase {
@@ -19,6 +21,12 @@ final class VerifierTest extends TestCase {
 		parent::setUp();
 		Functions\when( 'get_option' )->justReturn( base64_encode( str_repeat( 's', 32 ) ) );
 		Functions\when( 'update_option' )->justReturn( true );
+		// A faithful-enough stub for real tests (stripslashes is a no-op
+		// on anything that was never slashed in the first place), and
+		// exactly what lets test_a_slashed_trace_from_addslashes_deep_*
+		// below actually exercise the fix rather than just asserting a
+		// mock was called.
+		Functions\when( 'wp_unslash' )->alias( 'stripslashes' );
 		$this->reset_secret_cache();
 	}
 
@@ -73,6 +81,60 @@ final class VerifierTest extends TestCase {
 			'nxc_math_salt'      => $payload['salt'],
 			'nxc_math_signature' => $payload['signature'],
 			'nxc_math_answer'    => (string) ( $a + $b ),
+		);
+	}
+
+	/**
+	 * gapX is never part of the payload (see SliderChallenge's own
+	 * docblock); recovering it the same way verify() itself does --
+	 * searching for the HMAC match -- is the only way a test can know
+	 * what the "correct" submission even is.
+	 */
+	private function gap_x( array $payload ): int {
+		$ref    = new ReflectionClass( SliderChallenge::class );
+		$method = $ref->getMethod( 'find_gap_x' );
+		$method->setAccessible( true );
+
+		$gap_x = $method->invoke( null, $payload['salt'], $payload['signature'] );
+
+		if ( null === $gap_x ) {
+			$this->fail( 'Could not recover gapX from the test challenge.' );
+		}
+
+		return $gap_x;
+	}
+
+	/**
+	 * A real SliderChallenge, correctly solved and encoded as the
+	 * nxc_slider_* fields a genuine drag submission would carry --
+	 * mirrors solved_math_data() just above.
+	 *
+	 * @return array<string, string>
+	 */
+	private function solved_slider_data(): array {
+		$payload = SliderChallenge::create( self::FORM, 0, 600 );
+		$gap_x   = $this->gap_x( $payload );
+
+		$trace = array(
+			array(
+				'x' => 0,
+				't' => 0,
+			),
+			array(
+				'x' => (int) ( $gap_x / 2 ),
+				't' => 80,
+			),
+			array(
+				'x' => $gap_x,
+				't' => 200,
+			),
+		);
+
+		return array(
+			'nxc_slider_salt'      => $payload['salt'],
+			'nxc_slider_signature' => $payload['signature'],
+			'nxc_slider_x'         => (string) $gap_x,
+			'nxc_slider_trace'     => (string) json_encode( $trace ),
 		);
 	}
 
@@ -231,6 +293,92 @@ final class VerifierTest extends TestCase {
 		Functions\expect( 'do_action' )->zeroOrMoreTimes();
 
 		$data           = array_merge( array( 'nxc_ts' => time() - 10 ), $this->solved_math_data() );
+		$data['nxc_hp'] = 'bots fill this in';
+
+		$result = Verifier::verify( self::FORM, $data );
+
+		$this->assertFalse( $result->ok );
+		$this->assertSame( 'honeypot', $result->reason );
+	}
+
+	public function test_a_correctly_solved_slider_passes_with_no_interaction_flag(): void {
+		// No nxc_interacted at all -- a slider drag is itself the
+		// interaction, same reasoning as the math path above.
+		$data = array_merge( array( 'nxc_ts' => time() - 10 ), $this->solved_slider_data() );
+
+		Functions\expect( 'get_transient' )->once()->andReturn( false );
+		Functions\expect( 'set_transient' )->once()->andReturn( true );
+		Functions\expect( 'do_action' )->zeroOrMoreTimes();
+
+		$result = Verifier::verify( self::FORM, $data );
+
+		$this->assertTrue( $result->ok );
+		$this->assertSame( 'slider', $result->mode );
+	}
+
+	/**
+	 * Regression test for a bug caught during live testing: WordPress's
+	 * addslashes_deep() backslash-escapes every quote in $_POST, which
+	 * corrupts nxc_slider_trace's JSON before Verifier ever decodes it.
+	 * Stubbing wp_unslash() as an identity function (as setUp() does)
+	 * doesn't exercise that corruption, so this test fakes the slashing
+	 * explicitly to prove decode_trace() actually reverses it.
+	 */
+	public function test_a_slashed_trace_from_addslashes_deep_still_verifies(): void {
+		$data = array_merge( array( 'nxc_ts' => time() - 10 ), $this->solved_slider_data() );
+
+		$data['nxc_slider_trace'] = addslashes( $data['nxc_slider_trace'] );
+
+		Functions\expect( 'get_transient' )->once()->andReturn( false );
+		Functions\expect( 'set_transient' )->once()->andReturn( true );
+		Functions\expect( 'do_action' )->zeroOrMoreTimes();
+
+		$result = Verifier::verify( self::FORM, $data );
+
+		$this->assertTrue( $result->ok );
+		$this->assertSame( 'slider', $result->mode );
+	}
+
+	public function test_a_wrong_slider_position_fails(): void {
+		Functions\expect( 'do_action' )->zeroOrMoreTimes();
+
+		$data                  = array_merge( array( 'nxc_ts' => time() - 10 ), $this->solved_slider_data() );
+		$data['nxc_slider_x']  = (string) ( (int) $data['nxc_slider_x'] + 20 );
+
+		$result = Verifier::verify( self::FORM, $data );
+
+		$this->assertFalse( $result->ok );
+		$this->assertSame( 'bad_position', $result->reason );
+	}
+
+	public function test_a_degenerate_slider_trace_fails(): void {
+		Functions\expect( 'do_action' )->zeroOrMoreTimes();
+
+		$data                      = array_merge( array( 'nxc_ts' => time() - 10 ), $this->solved_slider_data() );
+		$data['nxc_slider_trace']  = (string) json_encode( array( array( 'x' => 0, 't' => 0 ) ) );
+
+		$result = Verifier::verify( self::FORM, $data );
+
+		$this->assertFalse( $result->ok );
+		$this->assertSame( 'bad_trace', $result->reason );
+	}
+
+	public function test_a_replayed_slider_submission_fails(): void {
+		$data = array_merge( array( 'nxc_ts' => time() - 10 ), $this->solved_slider_data() );
+
+		Functions\expect( 'get_transient' )->once()->andReturn( 1 );
+		Functions\expect( 'do_action' )->zeroOrMoreTimes();
+
+		$result = Verifier::verify( self::FORM, $data );
+
+		$this->assertFalse( $result->ok );
+		$this->assertSame( 'replayed', $result->reason );
+	}
+
+	public function test_a_honeypot_fill_still_fails_on_the_slider_path(): void {
+		Functions\expect( 'do_action' )->zeroOrMoreTimes();
+
+		$data           = array_merge( array( 'nxc_ts' => time() - 10 ), $this->solved_slider_data() );
 		$data['nxc_hp'] = 'bots fill this in';
 
 		$result = Verifier::verify( self::FORM, $data );

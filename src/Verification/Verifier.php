@@ -5,6 +5,7 @@ namespace Bitflw\NexCaptcha\Verification;
 
 use Bitflw\NexCaptcha\Challenge\MathChallenge;
 use Bitflw\NexCaptcha\Challenge\PowChallenge;
+use Bitflw\NexCaptcha\Challenge\SliderChallenge;
 use Bitflw\NexCaptcha\Signals\Honeypot;
 use Bitflw\NexCaptcha\Signals\InteractionCheck;
 use Bitflw\NexCaptcha\Signals\TimeTrap;
@@ -15,18 +16,19 @@ defined( 'ABSPATH' ) || exit;
  * Verifies a submitted token against its challenge and returns a Result.
  *
  * Dispatches on which fields are present: nxc_token is the normal
- * JS-driven PoW path; nxc_math_answer with no nxc_token is the
- * <noscript> fallback (templates/widget.php renders both only when
- * MathChallenge's HMAC-answer check also failed, so a weird submission
- * naming neither field is not a real client). Slider dispatch will be
- * added here once ChallengeFactory grows that mode.
+ * JS-driven PoW path; nxc_slider_salt with no nxc_token is the slider
+ * drag path; nxc_math_answer with neither is the <noscript> fallback
+ * (templates/widget.php renders it only when the JS-driven paths above
+ * aren't in play, so a weird submission naming none of these fields is
+ * not a real client).
  */
 class Verifier {
 
 	public static function verify( string $form_id, array $data ): Result {
-		$has_token = isset( $data['nxc_token'] ) && '' !== $data['nxc_token'];
-		$has_math  = isset( $data['nxc_math_answer'] );
-		$mode      = $has_math && ! $has_token ? 'math' : 'invisible';
+		$has_token  = isset( $data['nxc_token'] ) && '' !== $data['nxc_token'];
+		$has_slider = isset( $data['nxc_slider_salt'] ) && '' !== $data['nxc_slider_salt'];
+		$has_math   = isset( $data['nxc_math_answer'] );
+		$mode       = self::mode_for( $has_token, $has_slider, $has_math );
 
 		// Honeypot/TimeTrap apply regardless of which path a submission
 		// is attempting (or neither) -- cheapest, most certain signals
@@ -45,11 +47,27 @@ class Verifier {
 			return self::verify_pow( $form_id, $data );
 		}
 
+		if ( $has_slider ) {
+			return self::verify_slider( $form_id, $data );
+		}
+
 		if ( $has_math ) {
 			return self::verify_math( $form_id, $data );
 		}
 
 		return self::fail( 'malformed_token', $mode, $form_id );
+	}
+
+	private static function mode_for( bool $has_token, bool $has_slider, bool $has_math ): string {
+		if ( $has_token ) {
+			return 'invisible';
+		}
+
+		if ( $has_slider ) {
+			return 'slider';
+		}
+
+		return $has_math ? 'math' : 'invisible';
 	}
 
 	private static function verify_pow( string $form_id, array $data ): Result {
@@ -91,6 +109,70 @@ class Verifier {
 		do_action( 'nxc_verified', $mode, $form_id, $solve_ms );
 
 		return Result::pass( $mode );
+	}
+
+	/**
+	 * InteractionCheck is deliberately not run here either: a slider
+	 * drag *is* the interaction, so checking a separate JS-set flag on
+	 * top would be a redundant signal, not a bug to avoid (unlike
+	 * math's case below, this isn't about accessibility).
+	 */
+	private static function verify_slider( string $form_id, array $data ): Result {
+		$mode = 'slider';
+
+		$payload = array(
+			'salt'      => $data['nxc_slider_salt'] ?? '',
+			'signature' => $data['nxc_slider_signature'] ?? '',
+			'x'         => $data['nxc_slider_x'] ?? -1,
+			'trace'     => self::decode_trace( $data['nxc_slider_trace'] ?? null ),
+		);
+
+		$reason = SliderChallenge::verify( $payload, $form_id );
+
+		if ( null !== $reason ) {
+			return self::fail( $reason, $mode, $form_id );
+		}
+
+		// No separate "challenge" hash the way PoW has; the salt is
+		// equally unique per issuance, so it serves the same role as
+		// the replay guard's key (same reasoning as verify_math()'s).
+		$salt = (string) $payload['salt'];
+
+		if ( ReplayGuard::is_used( $salt ) ) {
+			return self::fail( 'replayed', $mode, $form_id );
+		}
+
+		$ttl = max( 0, SliderChallenge::expiry( $payload ) - time() );
+		ReplayGuard::mark_used( $salt, $ttl );
+
+		do_action( 'nxc_verified', $mode, $form_id, null );
+
+		return Result::pass( $mode );
+	}
+
+	/**
+	 * The trace travels over HTTP as a JSON string (nxc_slider_trace),
+	 * the same way widget.ts will send it -- not as native PHP array
+	 * fields the way $_POST can't represent nested structures anyway.
+	 *
+	 * wp_unslash() matters here specifically: WordPress's addslashes_deep()
+	 * backslash-escapes every quote in $_POST, which corrupts JSON's own
+	 * quotes before json_decode() ever sees them -- confirmed live, where
+	 * a validly-solved slider submission came back bad_trace until this
+	 * was added.
+	 *
+	 * @param mixed $trace
+	 *
+	 * @return array<int, array<string, mixed>>
+	 */
+	private static function decode_trace( $trace ): array {
+		if ( ! is_string( $trace ) || '' === $trace ) {
+			return array();
+		}
+
+		$decoded = json_decode( wp_unslash( $trace ), true );
+
+		return is_array( $decoded ) ? $decoded : array();
 	}
 
 	/**
