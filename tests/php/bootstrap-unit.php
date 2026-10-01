@@ -52,3 +52,17 @@ if ( ! class_exists( 'WP_Error' ) ) {
 		}
 	}
 }
+
+// Minimal WP_List_Table stand-in so Admin\LogsTable (extends it) can be
+// autoloaded at all. Real WordPress isn't loaded, so its own fallback
+// (requiring wp-admin/includes/class-wp-list-table.php relative to the
+// fake ABSPATH above) would fail -- nothing here is actually exercised
+// by the unit suite, which only tests LogsTable's static helpers.
+if ( ! class_exists( 'WP_List_Table' ) ) {
+	class WP_List_Table {
+		/**
+		 * @param array<string, mixed> $args
+		 */
+		public function __construct( array $args = array() ) {}
+	}
+}

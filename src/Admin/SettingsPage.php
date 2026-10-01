@@ -6,16 +6,15 @@ namespace Bitflw\NexCaptcha\Admin;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Renders Settings -> NexCaptcha. Only General, Forms and Security are
- * shown -- Appearance/Logs/Tools are added once Phase 3/5 give them a
- * real backing implementation (see docs/PLAN.md section 2.4 and this
- * change's own plan notes on scope).
+ * Renders Settings -> NexCaptcha. General, Forms, Security and Logs are
+ * shown -- Appearance/Tools are added once Phase 5 gives them a real
+ * backing implementation (see docs/PLAN.md section 2.4).
  */
 class SettingsPage {
 
 	private const SLUG   = 'nex-captcha';
 	private const OPTION = 'nxc_settings';
-	private const TABS   = array( 'general', 'forms', 'security' );
+	private const TABS   = array( 'general', 'forms', 'security', 'logs' );
 
 	public static function register(): void {
 		add_action( 'admin_menu', array( self::class, 'add_page' ) );
@@ -49,8 +48,7 @@ class SettingsPage {
 			return;
 		}
 
-		$tab      = self::current_tab();
-		$settings = Settings::all();
+		$tab = self::current_tab();
 		?>
 		<div class="wrap">
 			<h1><?php esc_html_e( 'NexCaptcha', 'nex-captcha' ); ?></h1>
@@ -61,13 +59,17 @@ class SettingsPage {
 					</a>
 				<?php endforeach; ?>
 			</h2>
-			<form method="post" action="options.php">
-				<?php
-				settings_fields( self::SLUG );
-				self::render_tab( $tab, $settings );
-				submit_button();
-				?>
-			</form>
+			<?php if ( 'logs' === $tab ) : ?>
+				<?php self::render_logs_tab(); ?>
+			<?php else : ?>
+				<form method="post" action="options.php">
+					<?php
+					settings_fields( self::SLUG );
+					self::render_tab( $tab, Settings::all() );
+					submit_button();
+					?>
+				</form>
+			<?php endif; ?>
 		</div>
 		<?php
 	}
@@ -94,6 +96,7 @@ class SettingsPage {
 			'general'  => __( 'General', 'nex-captcha' ),
 			'forms'    => __( 'Forms', 'nex-captcha' ),
 			'security' => __( 'Security', 'nex-captcha' ),
+			'logs'     => __( 'Logs', 'nex-captcha' ),
 		);
 
 		return $labels[ $tab_id ] ?? $tab_id;
@@ -217,5 +220,56 @@ class SettingsPage {
 			</tr>
 		</table>
 		<?php
+	}
+
+	/**
+	 * Unlike the other three tabs, Logs has nothing to submit into
+	 * nxc_settings -- it's a read-only WP_List_Table with its own
+	 * GET-based pagination/filtering, so it isn't wrapped in the
+	 * options.php settings form render() uses for everything else.
+	 */
+	private static function render_logs_tab(): void {
+		$table = new LogsTable();
+		$table->prepare_items();
+
+		$export_url = wp_nonce_url(
+			add_query_arg( self::logs_query_args(), admin_url( 'admin-post.php?action=nxc_export_logs' ) ),
+			'nxc_export_logs'
+		);
+		?>
+		<p>
+			<a href="<?php echo esc_url( $export_url ); ?>" class="button">
+				<?php esc_html_e( 'Export CSV', 'nex-captcha' ); ?>
+			</a>
+		</p>
+		<form method="get">
+			<input type="hidden" name="page" value="<?php echo esc_attr( self::SLUG ); ?>" />
+			<input type="hidden" name="tab" value="logs" />
+			<?php $table->display(); ?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * The currently active Logs-tab filters, as query args -- reused for
+	 * both the CSV export link and (via LogsTable::current_filters(),
+	 * reading the same $_GET keys) the table itself, so "export what
+	 * I'm looking at" actually matches.
+	 *
+	 * @return array<string, string>
+	 */
+	private static function logs_query_args(): array {
+		$filters = LogsTable::current_filters();
+		$args    = array();
+
+		if ( '' !== $filters['form'] ) {
+			$args['nxc_form'] = $filters['form'];
+		}
+
+		if ( '' !== $filters['result'] ) {
+			$args['nxc_result'] = $filters['result'];
+		}
+
+		return $args;
 	}
 }

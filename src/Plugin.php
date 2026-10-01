@@ -3,6 +3,7 @@ declare( strict_types=1 );
 
 namespace Bitflw\NexCaptcha;
 
+use Bitflw\NexCaptcha\Admin\LogsTable;
 use Bitflw\NexCaptcha\Admin\SettingsPage;
 use Bitflw\NexCaptcha\Integrations\IntegrationInterface;
 use Bitflw\NexCaptcha\Integrations\WpComments;
@@ -30,6 +31,7 @@ final class Plugin {
 
 		if ( is_admin() ) {
 			SettingsPage::register();
+			add_action( 'admin_post_nxc_export_logs', array( LogsTable::class, 'export_csv' ) );
 		}
 
 		add_shortcode( 'nexcaptcha', array( self::class, 'render_shortcode' ) );
