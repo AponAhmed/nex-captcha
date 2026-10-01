@@ -5,6 +5,17 @@
   --nxc-color-accent: #2563eb;
 }
 
+/* Without this, a declared percentage width/height plus a border (the
+   slider frame/piece both have one) renders larger than intended --
+   default content-box adds the border ON TOP of the declared size,
+   throwing off the piece's size relative to the frame. */
+.nxc-widget,
+.nxc-widget *,
+.nxc-widget *::before,
+.nxc-widget *::after {
+  box-sizing: border-box;
+}
+
 @media (prefers-color-scheme: dark) {
   .nxc-widget {
     --nxc-color-bg: #1a1a1a;
@@ -24,28 +35,40 @@
   overflow: hidden;
 }
 
-/* No fixed height here -- height is the image's own (below) plus the
+/* No fixed height here -- height is the frame's own (below) plus the
    accessible-alternative button that flows after it. */
 .nxc-widget__slider {
-  position: relative;
   width: 300px;
   max-width: 100%;
 }
 
-/* Matches Challenge\SliderChallenge's own WIDTH/HEIGHT (300x150). */
+/* The piece's percentage-based top/left/width/height (slider.ts) are
+   resolved against THIS element specifically -- it must be exactly the
+   image's own box, not the outer .nxc-widget__slider (which is taller
+   once the alternative button is added below), or the piece's vertical
+   size/position drifts away from the image's actual dimensions.
+   Matches Challenge\SliderChallenge's own WIDTH/HEIGHT (300x150 = 2:1);
+   aspect-ratio (not a fixed height) keeps that ratio correct if this
+   ever renders narrower than 300px (e.g. wp-login.php's own form is
+   only ~272px of content width). */
+.nxc-widget__slider-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 300 / 150;
+}
+
 .nxc-widget__slider-bg {
   display: block;
-  width: 300px;
-  height: 150px;
-  max-width: 100%;
+  width: 100%;
+  height: 100%;
   border: 1px solid var(--nxc-color-border);
 }
 
-/* PIECE_SIZE (40px) to match the backend-generated images exactly. */
+/* width/height are set inline (slider.ts) as percentages of the
+   container, matching the background image's own scaling 1:1 --
+   PIECE_SIZE (40px) only holds true at the widget's full native size. */
 .nxc-widget__slider-piece {
   position: absolute;
-  width: 40px;
-  height: 40px;
   background-size: cover;
   border: 1px solid #ffffff;
   cursor: grab;

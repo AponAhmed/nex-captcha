@@ -6,13 +6,30 @@
  * Challenge\SliderChallenge's own docblock), so unlike the PoW path this
  * widget can never locally confirm success -- status text stays neutral
  * guidance, not a "Verified." claim the server might contradict.
+ *
+ * All positions here (the trace, nxc_slider_x, the keyboard step) live
+ * in the backend's own native 0-300 coordinate space regardless of how
+ * large the widget actually renders on screen -- e.g. wp-login.php's
+ * own form is narrower than 300px, so the background image and the
+ * piece both get visually scaled down by the browser. The piece's own
+ * on-screen left/top/size are expressed as percentages of that native
+ * space (toPercent()), so they scale in lockstep with the image
+ * (confirmed live: a fixed-pixel piece position drifted away from the
+ * image's own visually-shrunk gap, failing bad_position every time).
+ * Pointer drag converts real on-screen pixel movement back into native
+ * units via the container's actual rendered width for the same reason.
  */
 
 // Mirrors Challenge\SliderChallenge's own constants (src/Challenge/SliderChallenge.php).
 const WIDTH = 300;
+const HEIGHT = 150;
 const PIECE_SIZE = 40;
 const KEYBOARD_STEP = 5; // Matches SliderChallenge::TOLERANCE, so a keyboard user can land exactly.
 const MAX_LEFT = WIDTH - PIECE_SIZE;
+
+function toPercent(value: number, of: number): string {
+  return `${(value / of) * 100}%`;
+}
 
 export interface SliderPayload {
   mode: 'slider';
@@ -61,6 +78,17 @@ export function renderSlider(widget: HTMLElement, payload: SliderPayload, onRequ
   const container = document.createElement('div');
   container.className = 'nxc-widget__slider';
 
+  // The piece's top/left/width/height are percentages resolved against
+  // THIS frame specifically -- it must be exactly the image's own box
+  // (via the same aspect-ratio), not the outer container, which is
+  // taller once the alternative button below is added. Percentages
+  // against the taller container previously threw off the piece's
+  // vertical size/position relative to the image (not the horizontal
+  // drag math, which only ever used the container's WIDTH -- same
+  // basis either way).
+  const frame = document.createElement('div');
+  frame.className = 'nxc-widget__slider-frame';
+
   const background = document.createElement('img');
   background.className = 'nxc-widget__slider-bg';
   background.src = payload.image;
@@ -75,13 +103,15 @@ export function renderSlider(widget: HTMLElement, payload: SliderPayload, onRequ
   piece.setAttribute('aria-valuemin', '0');
   piece.setAttribute('aria-valuemax', String(MAX_LEFT));
   piece.style.backgroundImage = `url(${payload.piece})`;
-  piece.style.top = `${payload.pieceY}px`;
+  piece.style.top = toPercent(payload.pieceY, HEIGHT);
+  piece.style.width = toPercent(PIECE_SIZE, WIDTH);
+  piece.style.height = toPercent(PIECE_SIZE, HEIGHT);
 
-  container.append(background, piece);
+  frame.append(background, piece);
+  container.append(frame);
 
-  // Inside the same container as background/piece, so
-  // clearPreviousRender()'s container.remove() cleans this up too on
-  // the next render -- no extra bookkeeping needed.
+  // Outside the frame (below it), so the frame's own height always
+  // matches the image's height exactly, regardless of the button.
   const alternative = document.createElement('button');
   alternative.type = 'button';
   alternative.className = 'nxc-widget__slider-alt';
@@ -98,13 +128,14 @@ export function renderSlider(widget: HTMLElement, payload: SliderPayload, onRequ
 
   const traceStart = performance.now();
   const trace: TracePoint[] = [];
+  let currentX = 0;
 
   const setPosition = (left: number): void => {
-    const clamped = clamp(left, 0, MAX_LEFT);
-    piece.style.left = `${clamped}px`;
-    piece.setAttribute('aria-valuenow', String(clamped));
-    xInput.value = String(clamped);
-    trace.push({ x: clamped, t: performance.now() - traceStart });
+    currentX = clamp(left, 0, MAX_LEFT);
+    piece.style.left = toPercent(currentX, WIDTH);
+    piece.setAttribute('aria-valuenow', String(currentX));
+    xInput.value = String(currentX);
+    trace.push({ x: currentX, t: performance.now() - traceStart });
     traceInput.value = JSON.stringify(trace);
   };
 
@@ -114,7 +145,12 @@ export function renderSlider(widget: HTMLElement, payload: SliderPayload, onRequ
   let dragStartClientX = 0;
 
   const onPointerMove = (event: PointerEvent): void => {
-    setPosition(dragStartLeft + (event.clientX - dragStartClientX));
+    // Real on-screen pixels -> native units, via however large the
+    // frame actually rendered (WIDTH/renderedWidth) -- 1:1 only when
+    // the widget renders at its full native size.
+    const renderedWidth = frame.getBoundingClientRect().width || WIDTH;
+    const scale = WIDTH / renderedWidth;
+    setPosition(dragStartLeft + (event.clientX - dragStartClientX) * scale);
   };
 
   const onPointerUp = (event: PointerEvent): void => {
@@ -124,7 +160,7 @@ export function renderSlider(widget: HTMLElement, payload: SliderPayload, onRequ
   };
 
   piece.addEventListener('pointerdown', (event: PointerEvent) => {
-    dragStartLeft = parseFloat(piece.style.left) || 0;
+    dragStartLeft = currentX;
     dragStartClientX = event.clientX;
     piece.setPointerCapture(event.pointerId);
     piece.addEventListener('pointermove', onPointerMove);
@@ -132,14 +168,12 @@ export function renderSlider(widget: HTMLElement, payload: SliderPayload, onRequ
   });
 
   piece.addEventListener('keydown', (event: KeyboardEvent) => {
-    const current = parseFloat(piece.style.left) || 0;
-
     if (event.key === 'ArrowLeft') {
       event.preventDefault();
-      setPosition(current - KEYBOARD_STEP);
+      setPosition(currentX - KEYBOARD_STEP);
     } else if (event.key === 'ArrowRight') {
       event.preventDefault();
-      setPosition(current + KEYBOARD_STEP);
+      setPosition(currentX + KEYBOARD_STEP);
     } else if (event.key === 'Home') {
       event.preventDefault();
       setPosition(0);

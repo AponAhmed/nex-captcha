@@ -50,7 +50,20 @@ describe('renderSlider', () => {
     const bg = widget.querySelector('.nxc-widget__slider-bg') as HTMLImageElement;
     expect(bg.src).toBe(PAYLOAD.image);
     expect(piece(widget).style.backgroundImage).toContain(PAYLOAD.piece);
-    expect(piece(widget).style.top).toBe('42px');
+    // Percentage of HEIGHT (150), not a raw pixel value -- so the piece
+    // scales in lockstep with the background image at any rendered
+    // size (see the module docblock: a fixed-pixel position drifted
+    // away from the image's own visually-shrunk gap on a narrow form).
+    expect(piece(widget).style.top).toBe(`${(42 / 150) * 100}%`);
+  });
+
+  it('sizes the piece as a percentage of the native dimensions, not fixed pixels', () => {
+    const widget = buildWidget();
+    render(widget, PAYLOAD);
+
+    const p = piece(widget);
+    expect(p.style.width).toBe(`${(40 / 300) * 100}%`);
+    expect(p.style.height).toBe(`${(40 / 150) * 100}%`);
   });
 
   it('starts the piece at the left edge with matching ARIA state', () => {

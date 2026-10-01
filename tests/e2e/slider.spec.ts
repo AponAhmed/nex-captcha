@@ -36,7 +36,9 @@ async function findGapX(page: Page): Promise<number> {
         reject(new Error('Slider markup not found.'));
         return;
       }
-      const pieceY = parseInt(piece.style.top, 10);
+      // piece.style.top is a percentage of the native 150px HEIGHT, not
+      // a raw pixel value -- see slider.ts's own docblock.
+      const pieceY = Math.round((parseFloat(piece.style.top) / 100) * 150);
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
@@ -118,17 +120,24 @@ test.describe('Slider widget', () => {
     await waitForSliderWidget(page);
 
     const gapX = await findGapX(page);
-    const container = page.locator('.nxc-widget__slider');
+    const frame = page.locator('.nxc-widget__slider-frame');
     const piece = page.locator('.nxc-widget__slider-piece');
-    const containerBox = await container.boundingBox();
+    const frameBox = await frame.boundingBox();
     const pieceBox = await piece.boundingBox();
-    if (!containerBox || !pieceBox) {
+    if (!frameBox || !pieceBox) {
       throw new Error('Slider widget did not lay out.');
     }
 
+    // gapX is in native 0-300 units; the frame can render narrower than
+    // that (e.g. wp-login.php's own form is ~270px), so convert via the
+    // actual render scale -- same conversion slider.ts's own drag
+    // handler does.
+    const renderScale = frameBox.width / 300;
+    const targetScreenX = frameBox.x + gapX * renderScale + pieceBox.width / 2;
+
     await page.mouse.move(pieceBox.x + pieceBox.width / 2, pieceBox.y + pieceBox.height / 2);
     await page.mouse.down();
-    await page.mouse.move(containerBox.x + gapX + pieceBox.width / 2, pieceBox.y + pieceBox.height / 2, { steps: 10 });
+    await page.mouse.move(targetScreenX, pieceBox.y + pieceBox.height / 2, { steps: 10 });
     await page.mouse.up();
 
     await submitWithWrongCredentials(page);
