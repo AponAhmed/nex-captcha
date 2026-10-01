@@ -3,6 +3,7 @@ declare( strict_types=1 );
 
 namespace Bitflw\NexCaptcha\Tests\Unit\Verification;
 
+use Bitflw\NexCaptcha\Challenge\MathChallenge;
 use Bitflw\NexCaptcha\Challenge\PowChallenge;
 use Bitflw\NexCaptcha\Support\Crypto;
 use Bitflw\NexCaptcha\Tests\TestCase;
@@ -58,6 +59,23 @@ final class VerifierTest extends TestCase {
 		);
 	}
 
+	/**
+	 * A real MathChallenge, correctly solved by parsing its own "a + b"
+	 * question -- mirrors how a genuine noscript submission would arrive.
+	 *
+	 * @return array<string, string>
+	 */
+	private function solved_math_data(): array {
+		$payload = MathChallenge::create( self::FORM, 0, 600 );
+		list( $a, $b ) = array_map( 'intval', explode( '+', (string) $payload['question'] ) );
+
+		return array(
+			'nxc_math_salt'      => $payload['salt'],
+			'nxc_math_signature' => $payload['signature'],
+			'nxc_math_answer'    => (string) ( $a + $b ),
+		);
+	}
+
 	public function test_a_honeypot_fill_fails_before_anything_else(): void {
 		Functions\expect( 'do_action' )->zeroOrMoreTimes();
 
@@ -79,10 +97,27 @@ final class VerifierTest extends TestCase {
 		$this->assertSame( 'too_fast', $result->reason );
 	}
 
-	public function test_no_interaction_fails_after_honeypot_and_time_trap_clear(): void {
+	public function test_no_submission_at_all_fails_as_malformed_token(): void {
 		Functions\expect( 'do_action' )->zeroOrMoreTimes();
 
+		// Honeypot/TimeTrap clear, but neither nxc_token nor
+		// nxc_math_answer is present -- not a real submission either way.
 		$result = Verifier::verify( self::FORM, array( 'nxc_ts' => time() - 10 ) );
+
+		$this->assertFalse( $result->ok );
+		$this->assertSame( 'malformed_token', $result->reason );
+	}
+
+	public function test_no_interaction_fails_within_the_pow_path(): void {
+		Functions\expect( 'do_action' )->zeroOrMoreTimes();
+
+		// A non-empty nxc_token is enough to enter the PoW path and reach
+		// InteractionCheck, even though it won't decode to anything valid.
+		$data              = $this->clean_timing();
+		$data['nxc_token'] = 'placeholder';
+		unset( $data['nxc_interacted'] );
+
+		$result = Verifier::verify( self::FORM, $data );
 
 		$this->assertFalse( $result->ok );
 		$this->assertSame( 'no_interaction', $result->reason );
@@ -151,5 +186,56 @@ final class VerifierTest extends TestCase {
 		Verifier::verify( self::FORM, $data );
 
 		$this->addToAssertionCount( 1 );
+	}
+
+	public function test_a_correctly_solved_math_answer_passes_with_no_interaction_flag(): void {
+		// No nxc_interacted at all -- proving the math/noscript path
+		// doesn't need it, unlike the PoW path.
+		$data = array_merge( array( 'nxc_ts' => time() - 10 ), $this->solved_math_data() );
+
+		Functions\expect( 'get_transient' )->once()->andReturn( false );
+		Functions\expect( 'set_transient' )->once()->andReturn( true );
+		Functions\expect( 'do_action' )->zeroOrMoreTimes();
+
+		$result = Verifier::verify( self::FORM, $data );
+
+		$this->assertTrue( $result->ok );
+		$this->assertSame( 'math', $result->mode );
+	}
+
+	public function test_a_wrong_math_answer_fails(): void {
+		Functions\expect( 'do_action' )->zeroOrMoreTimes();
+
+		$data                    = array_merge( array( 'nxc_ts' => time() - 10 ), $this->solved_math_data() );
+		$data['nxc_math_answer'] = (string) ( (int) $data['nxc_math_answer'] + 1 );
+
+		$result = Verifier::verify( self::FORM, $data );
+
+		$this->assertFalse( $result->ok );
+		$this->assertSame( 'bad_signature', $result->reason );
+	}
+
+	public function test_a_replayed_math_answer_fails(): void {
+		$data = array_merge( array( 'nxc_ts' => time() - 10 ), $this->solved_math_data() );
+
+		Functions\expect( 'get_transient' )->once()->andReturn( 1 );
+		Functions\expect( 'do_action' )->zeroOrMoreTimes();
+
+		$result = Verifier::verify( self::FORM, $data );
+
+		$this->assertFalse( $result->ok );
+		$this->assertSame( 'replayed', $result->reason );
+	}
+
+	public function test_a_honeypot_fill_still_fails_on_the_math_path(): void {
+		Functions\expect( 'do_action' )->zeroOrMoreTimes();
+
+		$data           = array_merge( array( 'nxc_ts' => time() - 10 ), $this->solved_math_data() );
+		$data['nxc_hp'] = 'bots fill this in';
+
+		$result = Verifier::verify( self::FORM, $data );
+
+		$this->assertFalse( $result->ok );
+		$this->assertSame( 'honeypot', $result->reason );
 	}
 }
