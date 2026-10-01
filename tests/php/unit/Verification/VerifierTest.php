@@ -47,13 +47,14 @@ final class VerifierTest extends TestCase {
 	}
 
 	/**
-	 * Old enough to clear the default 2-second time trap, with no
-	 * honeypot value -- the baseline for a "clean" submission that only
-	 * differs from a real bot in the field under test.
+	 * Old enough to clear the default 2-second time trap, with a flagged
+	 * interaction and no honeypot value -- the baseline for a "clean"
+	 * submission that only differs from a real bot in the field under test.
 	 */
 	private function clean_timing(): array {
 		return array(
-			'nxc_ts' => time() - 10,
+			'nxc_ts'         => time() - 10,
+			'nxc_interacted' => '1',
 		);
 	}
 
@@ -76,6 +77,15 @@ final class VerifierTest extends TestCase {
 
 		$this->assertFalse( $result->ok );
 		$this->assertSame( 'too_fast', $result->reason );
+	}
+
+	public function test_no_interaction_fails_after_honeypot_and_time_trap_clear(): void {
+		Functions\expect( 'do_action' )->zeroOrMoreTimes();
+
+		$result = Verifier::verify( self::FORM, array( 'nxc_ts' => time() - 10 ) );
+
+		$this->assertFalse( $result->ok );
+		$this->assertSame( 'no_interaction', $result->reason );
 	}
 
 	public function test_a_malformed_token_fails(): void {

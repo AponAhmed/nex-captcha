@@ -5,6 +5,7 @@ namespace Bitflw\NexCaptcha\Verification;
 
 use Bitflw\NexCaptcha\Challenge\PowChallenge;
 use Bitflw\NexCaptcha\Signals\Honeypot;
+use Bitflw\NexCaptcha\Signals\InteractionCheck;
 use Bitflw\NexCaptcha\Signals\TimeTrap;
 
 defined( 'ABSPATH' ) || exit;
@@ -22,7 +23,7 @@ class Verifier {
 
 		// Cheapest, most certain signals first -- no reason to touch
 		// crypto if the honeypot alone already gives the answer away.
-		foreach ( array( new Honeypot(), new TimeTrap() ) as $signal ) {
+		foreach ( array( new Honeypot(), new TimeTrap(), new InteractionCheck() ) as $signal ) {
 			$reason = $signal->check( $data );
 
 			if ( null !== $reason ) {

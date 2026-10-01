@@ -42,7 +42,7 @@ final class WpLostPasswordTest extends TestCase {
 	}
 
 	protected function tearDown(): void {
-		unset( $GLOBALS['pagenow'], $_SERVER['REQUEST_METHOD'], $_POST['nxc_token'], $_POST['nxc_ts'] );
+		unset( $GLOBALS['pagenow'], $_SERVER['REQUEST_METHOD'], $_POST['nxc_token'], $_POST['nxc_ts'], $_POST['nxc_interacted'] );
 		$this->reset_secret_cache();
 		parent::tearDown();
 	}
@@ -98,8 +98,9 @@ final class WpLostPasswordTest extends TestCase {
 		Functions\when( 'get_transient' )->justReturn( false );
 		Functions\when( 'set_transient' )->justReturn( true );
 
-		$_POST['nxc_token'] = $this->solved_token();
-		$_POST['nxc_ts']    = time() - 10;
+		$_POST['nxc_token']      = $this->solved_token();
+		$_POST['nxc_ts']         = time() - 10;
+		$_POST['nxc_interacted'] = '1';
 
 		$errors = new WP_Error();
 		( new WpLostPassword() )->validate( $errors );

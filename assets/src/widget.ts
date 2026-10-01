@@ -50,6 +50,37 @@ function tokenInput(widget: HTMLElement): HTMLInputElement | null {
   return widget.querySelector<HTMLInputElement>('input[name="nxc_token"]');
 }
 
+export function interactionInput(widget: HTMLElement): HTMLInputElement | null {
+  return widget.querySelector<HTMLInputElement>('input[name="nxc_interacted"]');
+}
+
+/**
+ * Marks nxc_interacted on the form's first focusin, pointerdown or
+ * input event -- focusin covers keyboard/Tab navigation too, so this
+ * doesn't create an accessibility gap. Armed from initWidget(), not
+ * gated behind the focus/view trigger that starts solving: it needs to
+ * be listening independently of that.
+ */
+export function trackInteraction(widget: HTMLElement): void {
+  const form = widget.closest('form');
+  const input = interactionInput(widget);
+
+  if (!form || !input) {
+    return;
+  }
+
+  const mark = () => {
+    input.value = '1';
+    form.removeEventListener('focusin', mark);
+    form.removeEventListener('pointerdown', mark);
+    form.removeEventListener('input', mark);
+  };
+
+  form.addEventListener('focusin', mark, { once: true });
+  form.addEventListener('pointerdown', mark, { once: true });
+  form.addEventListener('input', mark, { once: true });
+}
+
 function parseExpiry(salt: string): number | null {
   const [, query] = salt.split('?');
   if (!query) {
@@ -145,6 +176,8 @@ function initWidget(widget: HTMLElement): void {
   if (started.has(widget)) {
     return;
   }
+
+  trackInteraction(widget);
 
   const start = () => {
     if (started.has(widget)) {
