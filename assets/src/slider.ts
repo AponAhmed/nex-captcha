@@ -50,7 +50,7 @@ function hiddenInput(name: string, value: string): HTMLInputElement {
   return input;
 }
 
-export function renderSlider(widget: HTMLElement, payload: SliderPayload): void {
+export function renderSlider(widget: HTMLElement, payload: SliderPayload, onRequestAlternative: () => void): void {
   clearPreviousRender(widget);
 
   const status = widget.querySelector<HTMLElement>('.nxc-widget__status');
@@ -78,6 +78,16 @@ export function renderSlider(widget: HTMLElement, payload: SliderPayload): void 
   piece.style.top = `${payload.pieceY}px`;
 
   container.append(background, piece);
+
+  // Inside the same container as background/piece, so
+  // clearPreviousRender()'s container.remove() cleans this up too on
+  // the next render -- no extra bookkeeping needed.
+  const alternative = document.createElement('button');
+  alternative.type = 'button';
+  alternative.className = 'nxc-widget__slider-alt';
+  alternative.textContent = 'Accessible alternative';
+  alternative.addEventListener('click', onRequestAlternative);
+  container.append(alternative);
 
   const saltInput = hiddenInput('nxc_slider_salt', payload.salt);
   const signatureInput = hiddenInput('nxc_slider_signature', payload.signature);

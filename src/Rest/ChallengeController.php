@@ -83,16 +83,24 @@ class ChallengeController {
 
 	/**
 	 * "The server may upgrade it, never downgrade it" (docs/PLAN.md
-	 * section 4.4): with only two modes in play this is a plain OR --
-	 * slider if the client explicitly asked for it, or if RiskScorer's
-	 * own signals say it should be, whichever came first never loses.
+	 * section 4.4). An explicit request for slider OR math is always
+	 * honored outright -- math especially so, since it's the visitor's
+	 * own accessible-alternative choice (assets/src/slider.ts's own
+	 * link), not a security tier risk scoring should be able to
+	 * override back to the slider they were trying to get away from.
+	 * RiskScorer only gets a say when nothing was explicitly requested,
+	 * and only ever upgrades the default to slider, never to math.
 	 */
 	private static function resolve_mode( string $requested ): string {
 		if ( '' !== $requested && ! ChallengeFactory::is_known_mode( $requested ) ) {
 			$requested = ChallengeFactory::DEFAULT_MODE;
 		}
 
-		if ( 'slider' === $requested || 'slider' === RiskScorer::mode() ) {
+		if ( 'slider' === $requested || 'math' === $requested ) {
+			return $requested;
+		}
+
+		if ( 'slider' === RiskScorer::mode() ) {
 			return 'slider';
 		}
 

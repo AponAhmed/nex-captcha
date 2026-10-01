@@ -40,10 +40,10 @@ final class ChallengeFactoryTest extends TestCase {
 		$this->assertTrue( ChallengeFactory::is_known_mode( 'slider' ) );
 	}
 
-	public function test_math_is_not_a_known_mode(): void {
-		// MathChallenge is noscript-only, never reachable through the
-		// REST endpoint this factory serves.
-		$this->assertFalse( ChallengeFactory::is_known_mode( 'math' ) );
+	public function test_math_is_a_known_mode(): void {
+		// Reachable over REST so the slider's "Accessible alternative"
+		// link can fetch one, not just the <noscript> fallback.
+		$this->assertTrue( ChallengeFactory::is_known_mode( 'math' ) );
 	}
 
 	public function test_an_unknown_mode_is_not_known(): void {
@@ -63,6 +63,14 @@ final class ChallengeFactoryTest extends TestCase {
 		$this->assertSame( 'slider', $payload['mode'] );
 		$this->assertArrayHasKey( 'image', $payload );
 		$this->assertArrayHasKey( 'piece', $payload );
+	}
+
+	public function test_math_mode_creates_a_math_payload(): void {
+		$payload = ChallengeFactory::create( 'math', self::FORM, 0, self::TTL );
+
+		$this->assertSame( 'math', $payload['mode'] );
+		$this->assertArrayHasKey( 'question', $payload );
+		$this->assertArrayNotHasKey( 'answer', $payload );
 	}
 
 	public function test_an_unknown_mode_falls_back_to_the_default(): void {

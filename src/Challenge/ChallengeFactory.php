@@ -8,9 +8,10 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Builds the right challenge instance for a requested or risk-adjusted mode.
  *
- * MathChallenge is deliberately not reachable here: it's only ever used by
- * the <noscript> fallback rendered server-side in templates/widget.php, never
- * requested through the REST challenge endpoint this factory serves.
+ * MathChallenge is also reachable here (not just the <noscript> fallback
+ * in templates/widget.php) so the slider's "Accessible alternative" link
+ * can fetch a real one over REST -- see ChallengeController::resolve_mode()
+ * for why math is never risk-escalated-to, only ever requested outright.
  */
 class ChallengeFactory {
 
@@ -19,6 +20,7 @@ class ChallengeFactory {
 	private const MODES = array(
 		'invisible' => PowChallenge::class,
 		'slider'    => SliderChallenge::class,
+		'math'      => MathChallenge::class,
 	);
 
 	public static function is_known_mode( string $mode ): bool {

@@ -156,4 +156,52 @@ test.describe('Slider widget', () => {
 
     await expect(page.locator('#login_error')).toContainText('Verification failed');
   });
+
+  test('the accessible-alternative link switches to a math question and a correct answer passes', async ({ page }) => {
+    // Only the FIRST challenge fetch is forced to slider -- the click
+    // handler's own re-fetch explicitly requests mode=math, and a
+    // blanket forceSliderMode() would clobber that back to slider,
+    // defeating the exact thing this test is proving.
+    let forced = false;
+    await page.route('**/wp-json/nexcaptcha/v1/challenge*', (route) => {
+      if (forced) {
+        void route.continue();
+        return;
+      }
+      forced = true;
+      const url = new URL(route.request().url());
+      url.searchParams.set('mode', 'slider');
+      void route.continue({ url: url.toString() });
+    });
+
+    await page.goto('/wp-login.php');
+    await waitForSliderWidget(page);
+
+    await page.click('.nxc-widget__slider-alt');
+
+    const answer = page.locator('input[name="nxc_math_answer"]');
+    await expect(answer).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('.nxc-widget__slider-piece')).toHaveCount(0);
+
+    const label = await page.locator('.nxc-widget__math-js label').textContent();
+    const match = label?.match(/(\d+)\s*\+\s*(\d+)/);
+    if (!match) {
+      throw new Error(`Could not parse a question out of: ${label}`);
+    }
+    const sum = parseInt(match[1], 10) + parseInt(match[2], 10);
+
+    await answer.fill(String(sum));
+
+    // nxc_ts is set once at page render and isn't reset by switching
+    // modes client-side -- this flow has fewer interaction steps than
+    // the drag-based tests above, so without a pause it can complete
+    // fast enough to trip Signals\TimeTrap's own 2s floor, same as a
+    // real visitor moving unusually fast would.
+    await page.waitForTimeout(2200);
+    await submitWithWrongCredentials(page);
+
+    const error = page.locator('#login_error');
+    await expect(error).toBeVisible();
+    await expect(error).not.toContainText('Verification failed');
+  });
 });

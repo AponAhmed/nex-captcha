@@ -1,11 +1,15 @@
 /**
  * Finds .nxc-widget elements, fetches a challenge on first focus/view,
- * and either solves it in a Web Worker (invisible PoW) or hands it off
- * to slider.ts (slider puzzle) before the form submits. Refreshes
- * before the challenge expires, for whichever mode was last served.
+ * and hands it off to the right renderer for its mode -- a Web Worker
+ * for invisible PoW, slider.ts for the slider puzzle, math.ts for the
+ * math/text question (reached either by risk escalation or by the
+ * slider's own "Accessible alternative" link) -- before the form
+ * submits. Refreshes before the challenge expires, for whichever mode
+ * was last served.
  */
 
 import { renderSlider, type SliderPayload } from './slider';
+import { renderMath, type MathPayload } from './math';
 
 // Injected at build time (assets/build.mjs) with worker.ts's bundled
 // source, so the worker runs from a Blob URL with no extra request.
@@ -20,7 +24,7 @@ interface PowPayload {
   signature: string;
 }
 
-type ChallengePayload = PowPayload | SliderPayload;
+type ChallengePayload = PowPayload | SliderPayload | MathPayload;
 
 interface SolvedMessage {
   type: 'solved';
@@ -86,6 +90,18 @@ export function trackInteraction(widget: HTMLElement): void {
   form.addEventListener('input', mark, { once: true });
 }
 
+/**
+ * Clears slider and math markup/fields unconditionally, regardless of
+ * which mode is about to render -- each renderer's own cleanup only
+ * knows about its own prior same-type render (see slider.ts's and
+ * math.ts's own clearPreviousRender()), not the other type's leftovers
+ * from a mode switch.
+ */
+function clearOtherChallengeMarkup(widget: HTMLElement): void {
+  widget.querySelectorAll('.nxc-widget__slider, .nxc-widget__math-js').forEach((element) => element.remove());
+  widget.querySelectorAll('input[name^="nxc_slider_"], input[name^="nxc_math_"]').forEach((input) => input.remove());
+}
+
 function parseExpiry(salt: string): number | null {
   const [, query] = salt.split('?');
   if (!query) {
@@ -124,7 +140,7 @@ function runWorker(payload: PowPayload): Promise<SolvedMessage | null> {
   });
 }
 
-async function solveWidget(widget: HTMLElement): Promise<void> {
+async function solveWidget(widget: HTMLElement, forcedMode?: string): Promise<void> {
   const form = widget.dataset.form;
   const restUrl = widget.dataset.restUrl;
   const input = tokenInput(widget);
@@ -136,7 +152,8 @@ async function solveWidget(widget: HTMLElement): Promise<void> {
   let payload: ChallengePayload;
 
   try {
-    const response = await fetch(`${restUrl}challenge?form=${encodeURIComponent(form)}`, {
+    const modeParam = forcedMode ? `&mode=${encodeURIComponent(forcedMode)}` : '';
+    const response = await fetch(`${restUrl}challenge?form=${encodeURIComponent(form)}${modeParam}`, {
       credentials: 'omit',
     });
     if (!response.ok) {
@@ -149,8 +166,23 @@ async function solveWidget(widget: HTMLElement): Promise<void> {
     return;
   }
 
+  // Switching between challenge types (e.g. the slider's "Accessible
+  // alternative" link) must clear whichever OTHER mode last rendered --
+  // each renderer's own cleanup only knows about its own markup/fields,
+  // and Verifier dispatches on field presence, so a stale nxc_slider_*
+  // left behind would hijack a math submission down the wrong path.
+  clearOtherChallengeMarkup(widget);
+
   if (payload.mode === 'slider') {
-    renderSlider(widget, payload);
+    renderSlider(widget, payload, () => {
+      void solveWidget(widget, 'math');
+    });
+    scheduleRefresh(widget, payload.salt);
+    return;
+  }
+
+  if (payload.mode === 'math') {
+    renderMath(widget, payload);
     scheduleRefresh(widget, payload.salt);
     return;
   }

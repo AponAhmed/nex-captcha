@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderSlider, type SliderPayload } from './slider';
 
 const PAYLOAD: SliderPayload = {
@@ -9,6 +9,11 @@ const PAYLOAD: SliderPayload = {
   salt: 'abc123?expires=9999999999&form=login&v=1',
   signature: 'deadbeef',
 };
+
+/** Most tests don't care about the alternative-link callback. */
+function render(widget: HTMLElement, payload: SliderPayload, onRequestAlternative: () => void = () => {}): void {
+  renderSlider(widget, payload, onRequestAlternative);
+}
 
 function buildWidget(): HTMLElement {
   document.body.innerHTML = `
@@ -40,7 +45,7 @@ describe('renderSlider', () => {
 
   it('renders the background and piece with the payload data', () => {
     const widget = buildWidget();
-    renderSlider(widget, PAYLOAD);
+    render(widget, PAYLOAD);
 
     const bg = widget.querySelector('.nxc-widget__slider-bg') as HTMLImageElement;
     expect(bg.src).toBe(PAYLOAD.image);
@@ -50,7 +55,7 @@ describe('renderSlider', () => {
 
   it('starts the piece at the left edge with matching ARIA state', () => {
     const widget = buildWidget();
-    renderSlider(widget, PAYLOAD);
+    render(widget, PAYLOAD);
 
     const p = piece(widget);
     expect(p.getAttribute('role')).toBe('slider');
@@ -62,7 +67,7 @@ describe('renderSlider', () => {
 
   it('sets the salt and signature hidden inputs once from the payload', () => {
     const widget = buildWidget();
-    renderSlider(widget, PAYLOAD);
+    render(widget, PAYLOAD);
 
     expect(hiddenValue(widget, 'nxc_slider_salt')).toBe(PAYLOAD.salt);
     expect(hiddenValue(widget, 'nxc_slider_signature')).toBe(PAYLOAD.signature);
@@ -75,7 +80,7 @@ describe('renderSlider', () => {
 
   it('moves right by the keyboard step on ArrowRight', () => {
     const widget = buildWidget();
-    renderSlider(widget, PAYLOAD);
+    render(widget, PAYLOAD);
 
     pressKey(piece(widget), 'ArrowRight');
 
@@ -85,7 +90,7 @@ describe('renderSlider', () => {
 
   it('moves left by the keyboard step on ArrowLeft, clamped at 0', () => {
     const widget = buildWidget();
-    renderSlider(widget, PAYLOAD);
+    render(widget, PAYLOAD);
 
     pressKey(piece(widget), 'ArrowLeft');
 
@@ -94,7 +99,7 @@ describe('renderSlider', () => {
 
   it('clamps at the right bound and jumps there on End', () => {
     const widget = buildWidget();
-    renderSlider(widget, PAYLOAD);
+    render(widget, PAYLOAD);
 
     pressKey(piece(widget), 'End');
 
@@ -107,7 +112,7 @@ describe('renderSlider', () => {
 
   it('jumps back to 0 on Home', () => {
     const widget = buildWidget();
-    renderSlider(widget, PAYLOAD);
+    render(widget, PAYLOAD);
 
     pressKey(piece(widget), 'End');
     pressKey(piece(widget), 'Home');
@@ -117,7 +122,7 @@ describe('renderSlider', () => {
 
   it('grows the trace with each keyboard move', () => {
     const widget = buildWidget();
-    renderSlider(widget, PAYLOAD);
+    render(widget, PAYLOAD);
 
     const traceAfterRender = JSON.parse(hiddenValue(widget, 'nxc_slider_trace'));
     expect(traceAfterRender).toHaveLength(1);
@@ -135,10 +140,10 @@ describe('renderSlider', () => {
 
   it('replaces a previous render instead of duplicating markup or inputs', () => {
     const widget = buildWidget();
-    renderSlider(widget, PAYLOAD);
+    render(widget, PAYLOAD);
     pressKey(piece(widget), 'ArrowRight');
 
-    renderSlider(widget, { ...PAYLOAD, salt: 'fresh-salt?expires=9999999999&form=login&v=1' });
+    render(widget, { ...PAYLOAD, salt: 'fresh-salt?expires=9999999999&form=login&v=1' });
 
     expect(widget.querySelectorAll('.nxc-widget__slider')).toHaveLength(1);
     expect(widget.querySelectorAll('input[name="nxc_slider_x"]')).toHaveLength(1);
@@ -148,9 +153,29 @@ describe('renderSlider', () => {
 
   it('sets neutral status guidance, never a "Verified" claim', () => {
     const widget = buildWidget();
-    renderSlider(widget, PAYLOAD);
+    render(widget, PAYLOAD);
 
     const status = widget.querySelector('.nxc-widget__status') as HTMLElement;
     expect(status.textContent).not.toMatch(/verified/i);
+  });
+
+  it('calls onRequestAlternative when the accessible-alternative button is clicked', () => {
+    const widget = buildWidget();
+    const onRequestAlternative = vi.fn();
+    renderSlider(widget, PAYLOAD, onRequestAlternative);
+
+    const button = widget.querySelector('.nxc-widget__slider-alt') as HTMLButtonElement;
+    expect(button.type).toBe('button');
+    button.click();
+
+    expect(onRequestAlternative).toHaveBeenCalledOnce();
+  });
+
+  it('removes the alternative button on re-render, along with the rest of the slider markup', () => {
+    const widget = buildWidget();
+    render(widget, PAYLOAD);
+    render(widget, PAYLOAD);
+
+    expect(widget.querySelectorAll('.nxc-widget__slider-alt')).toHaveLength(1);
   });
 });
