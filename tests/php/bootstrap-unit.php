@@ -13,6 +13,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 require_once dirname( __DIR__, 2 ) . '/vendor/autoload.php';
 
+// WP core time constant, used by Logging\EventLogger::prune().
+if ( ! defined( 'DAY_IN_SECONDS' ) ) {
+	define( 'DAY_IN_SECONDS', 86400 );
+}
+
 // Minimal WP_Error stand-in: Brain Monkey mocks WP *functions*, not core
 // classes, and real WordPress isn't loaded for unit tests.
 if ( ! class_exists( 'WP_Error' ) ) {

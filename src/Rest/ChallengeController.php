@@ -61,6 +61,8 @@ class ChallengeController {
 		}
 
 		if ( self::is_rate_limited() ) {
+			do_action( 'nxc_rate_limited', $form );
+
 			return self::respond( array( 'code' => 'rate_limited' ), 429 );
 		}
 

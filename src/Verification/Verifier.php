@@ -52,7 +52,9 @@ class Verifier {
 		$ttl = max( 0, PowChallenge::expiry( $payload ) - time() );
 		ReplayGuard::mark_used( $challenge, $ttl );
 
-		do_action( 'nxc_verified', $mode, $form_id );
+		$solve_ms = isset( $payload['took'] ) && is_numeric( $payload['took'] ) ? (int) $payload['took'] : null;
+
+		do_action( 'nxc_verified', $mode, $form_id, $solve_ms );
 
 		return Result::pass( $mode );
 	}

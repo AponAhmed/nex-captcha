@@ -9,6 +9,7 @@ use Bitflw\NexCaptcha\Integrations\WpComments;
 use Bitflw\NexCaptcha\Integrations\WpLogin;
 use Bitflw\NexCaptcha\Integrations\WpLostPassword;
 use Bitflw\NexCaptcha\Integrations\WpRegister;
+use Bitflw\NexCaptcha\Logging\EventLogger;
 use Bitflw\NexCaptcha\Rest\ChallengeController;
 use Bitflw\NexCaptcha\Signals\RiskScorer;
 
@@ -22,6 +23,8 @@ final class Plugin {
 
 	public static function boot(): void {
 		ChallengeController::register();
+
+		EventLogger::register();
 
 		add_filter( 'nxc_pow_maxnumber', array( RiskScorer::class, 'adjust_maxnumber' ), 10, 2 );
 

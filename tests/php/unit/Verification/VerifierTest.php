@@ -133,7 +133,7 @@ final class VerifierTest extends TestCase {
 
 		Functions\expect( 'get_transient' )->once()->andReturn( false );
 		Functions\expect( 'set_transient' )->once()->andReturn( true );
-		Functions\expect( 'do_action' )->once()->with( 'nxc_verified', 'invisible', self::FORM );
+		Functions\expect( 'do_action' )->once()->with( 'nxc_verified', 'invisible', self::FORM, 10 );
 
 		Verifier::verify( self::FORM, $data );
 
