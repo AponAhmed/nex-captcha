@@ -14,13 +14,14 @@ defined( 'ABSPATH' ) || exit;
  * Same HMAC-signed-token approach as PowChallenge/MathChallenge (one
  * of the two options docs/PLAN.md section 3.4 offers, chosen over
  * sodium_crypto_secretbox for consistency -- no new crypto primitive
- * for a third feature when HMAC already does the job). The gap X
- * position is never transmitted or stored anywhere: signature =
- * HMAC(salt . gapX, secret), and verify() recovers gapX by searching
- * the full valid coordinate range for the one value whose HMAC
- * matches -- cheap (a few hundred HMACs) for the server, which holds
- * the secret, and meaningless as an attack surface for anyone who
- * doesn't.
+ * for a third feature when HMAC already does the job). The gap
+ * position (both X and Y -- a real 2D jigsaw puzzle, not a 1D
+ * horizontal slider) is never transmitted or stored anywhere:
+ * signature = HMAC(salt . gapX . '_' . gapY, secret), and verify()
+ * recovers both by searching the full valid coordinate grid for the
+ * one pair whose HMAC matches -- cheap (tens of thousands of HMACs,
+ * still sub-second) for the server, which holds the secret, and
+ * meaningless as an attack surface for anyone who doesn't.
  */
 class SliderChallenge implements ChallengeInterface {
 
@@ -32,12 +33,12 @@ class SliderChallenge implements ChallengeInterface {
 
 	// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- $maxnumber is part of ChallengeInterface's contract; no PoW difficulty concept applies to a slider puzzle.
 	public static function create( string $form, int $maxnumber, int $ttl ): array {
-		$gap_x   = random_int( self::MARGIN, self::WIDTH - self::PIECE_SIZE - self::MARGIN );
-		$piece_y = random_int( self::MARGIN, self::HEIGHT - self::PIECE_SIZE - self::MARGIN );
+		$gap_x = random_int( self::MARGIN, self::WIDTH - self::PIECE_SIZE - self::MARGIN );
+		$gap_y = random_int( self::MARGIN, self::HEIGHT - self::PIECE_SIZE - self::MARGIN );
 
 		$background = self::draw_background();
-		$piece      = self::extract_piece( $background, $gap_x, $piece_y );
-		self::draw_gap( $background, $gap_x, $piece_y );
+		$piece      = self::extract_piece( $background, $gap_x, $gap_y );
+		self::draw_gap( $background, $gap_x, $gap_y );
 
 		$image_uri = self::to_data_uri( $background );
 		$piece_uri = self::to_data_uri( $piece );
@@ -52,9 +53,8 @@ class SliderChallenge implements ChallengeInterface {
 			'mode'      => 'slider',
 			'image'     => $image_uri,
 			'piece'     => $piece_uri,
-			'pieceY'    => $piece_y,
 			'salt'      => $salt,
-			'signature' => Crypto::hmac( $salt . $gap_x ),
+			'signature' => Crypto::hmac( $salt . $gap_x . '_' . $gap_y ),
 		);
 	}
 
@@ -68,14 +68,15 @@ class SliderChallenge implements ChallengeInterface {
 		$salt      = (string) ( $payload['salt'] ?? '' );
 		$signature = (string) ( $payload['signature'] ?? '' );
 		$x         = (int) ( $payload['x'] ?? -1 );
+		$y         = (int) ( $payload['y'] ?? -1 );
 
-		$gap_x = self::find_gap_x( $salt, $signature );
+		$gap = self::find_gap_xy( $salt, $signature );
 
-		if ( null === $gap_x ) {
+		if ( null === $gap ) {
 			return 'bad_signature';
 		}
 
-		if ( abs( $x - $gap_x ) > self::TOLERANCE ) {
+		if ( abs( $x - $gap[0] ) > self::TOLERANCE || abs( $y - $gap[1] ) > self::TOLERANCE ) {
 			return 'bad_position';
 		}
 
@@ -107,14 +108,23 @@ class SliderChallenge implements ChallengeInterface {
 	}
 
 	/**
-	 * Recovers gapX by searching every valid coordinate for the one
-	 * whose HMAC matches the signature -- the only value that could
-	 * have produced it, short of breaking HMAC.
+	 * Recovers (gapX, gapY) by searching every valid coordinate pair for
+	 * the one whose HMAC matches the signature -- the only pair that
+	 * could have produced it, short of breaking HMAC. Bounded the same
+	 * way create() bounds its own random_int() calls, so this covers
+	 * every value create() could have picked.
+	 *
+	 * @return array{0: int, 1: int}|null
 	 */
-	private static function find_gap_x( string $salt, string $signature ): ?int {
-		for ( $candidate = 0; $candidate <= self::WIDTH; $candidate++ ) {
-			if ( Crypto::equals( Crypto::hmac( $salt . $candidate ), $signature ) ) {
-				return $candidate;
+	private static function find_gap_xy( string $salt, string $signature ): ?array {
+		$max_x = self::WIDTH - self::PIECE_SIZE - self::MARGIN;
+		$max_y = self::HEIGHT - self::PIECE_SIZE - self::MARGIN;
+
+		for ( $x = self::MARGIN; $x <= $max_x; $x++ ) {
+			for ( $y = self::MARGIN; $y <= $max_y; $y++ ) {
+				if ( Crypto::equals( Crypto::hmac( $salt . $x . '_' . $y ), $signature ) ) {
+					return array( $x, $y );
+				}
 			}
 		}
 
@@ -123,10 +133,10 @@ class SliderChallenge implements ChallengeInterface {
 
 	/**
 	 * Deliberately simple heuristics ("at least a few points, spread
-	 * over some non-zero time, with some horizontal movement"), not a
-	 * sophisticated bot classifier -- consistent with this being a
-	 * self-hosted single-purpose plugin rather than an enterprise
-	 * bot-detection product.
+	 * over some non-zero time, with some movement on at least one
+	 * axis"), not a sophisticated bot classifier -- consistent with
+	 * this being a self-hosted single-purpose plugin rather than an
+	 * enterprise bot-detection product.
 	 *
 	 * @param mixed $trace
 	 */
@@ -138,9 +148,10 @@ class SliderChallenge implements ChallengeInterface {
 		$first_t = null;
 		$prev_t  = null;
 		$xs      = array();
+		$ys      = array();
 
 		foreach ( $trace as $point ) {
-			if ( ! is_array( $point ) || ! isset( $point['x'], $point['t'] ) || ! is_numeric( $point['x'] ) || ! is_numeric( $point['t'] ) ) {
+			if ( ! is_array( $point ) || ! isset( $point['x'], $point['y'], $point['t'] ) || ! is_numeric( $point['x'] ) || ! is_numeric( $point['y'] ) || ! is_numeric( $point['t'] ) ) {
 				return 'bad_trace';
 			}
 
@@ -156,9 +167,14 @@ class SliderChallenge implements ChallengeInterface {
 
 			$prev_t = $t;
 			$xs[]   = (float) $point['x'];
+			$ys[]   = (float) $point['y'];
 		}
 
-		if ( ( $prev_t - $first_t ) < 50.0 || ( max( $xs ) - min( $xs ) ) < 2.0 ) {
+		if ( ( $prev_t - $first_t ) < 50.0 ) {
+			return 'bad_trace';
+		}
+
+		if ( ( max( $xs ) - min( $xs ) ) < 2.0 && ( max( $ys ) - min( $ys ) ) < 2.0 ) {
 			return 'bad_trace';
 		}
 

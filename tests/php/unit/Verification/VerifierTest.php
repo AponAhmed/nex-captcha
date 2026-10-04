@@ -85,23 +85,25 @@ final class VerifierTest extends TestCase {
 	}
 
 	/**
-	 * gapX is never part of the payload (see SliderChallenge's own
-	 * docblock); recovering it the same way verify() itself does --
-	 * searching for the HMAC match -- is the only way a test can know
-	 * what the "correct" submission even is.
+	 * The gap position is never part of the payload (see
+	 * SliderChallenge's own docblock); recovering it the same way
+	 * verify() itself does -- searching for the HMAC match -- is the
+	 * only way a test can know what the "correct" submission even is.
+	 *
+	 * @return array{0: int, 1: int}
 	 */
-	private function gap_x( array $payload ): int {
+	private function gap_xy( array $payload ): array {
 		$ref    = new ReflectionClass( SliderChallenge::class );
-		$method = $ref->getMethod( 'find_gap_x' );
+		$method = $ref->getMethod( 'find_gap_xy' );
 		$method->setAccessible( true );
 
-		$gap_x = $method->invoke( null, $payload['salt'], $payload['signature'] );
+		$gap = $method->invoke( null, $payload['salt'], $payload['signature'] );
 
-		if ( null === $gap_x ) {
-			$this->fail( 'Could not recover gapX from the test challenge.' );
+		if ( null === $gap ) {
+			$this->fail( 'Could not recover the gap position from the test challenge.' );
 		}
 
-		return $gap_x;
+		return $gap;
 	}
 
 	/**
@@ -113,19 +115,22 @@ final class VerifierTest extends TestCase {
 	 */
 	private function solved_slider_data(): array {
 		$payload = SliderChallenge::create( self::FORM, 0, 600 );
-		$gap_x   = $this->gap_x( $payload );
+		list( $gap_x, $gap_y ) = $this->gap_xy( $payload );
 
 		$trace = array(
 			array(
 				'x' => 0,
+				'y' => 0,
 				't' => 0,
 			),
 			array(
 				'x' => (int) ( $gap_x / 2 ),
+				'y' => (int) ( $gap_y / 2 ),
 				't' => 80,
 			),
 			array(
 				'x' => $gap_x,
+				'y' => $gap_y,
 				't' => 200,
 			),
 		);
@@ -134,6 +139,7 @@ final class VerifierTest extends TestCase {
 			'nxc_slider_salt'      => $payload['salt'],
 			'nxc_slider_signature' => $payload['signature'],
 			'nxc_slider_x'         => (string) $gap_x,
+			'nxc_slider_y'         => (string) $gap_y,
 			'nxc_slider_trace'     => (string) json_encode( $trace ),
 		);
 	}

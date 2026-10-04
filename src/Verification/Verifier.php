@@ -124,6 +124,7 @@ class Verifier {
 			'salt'      => $data['nxc_slider_salt'] ?? '',
 			'signature' => $data['nxc_slider_signature'] ?? '',
 			'x'         => $data['nxc_slider_x'] ?? -1,
+			'y'         => $data['nxc_slider_y'] ?? -1,
 			'trace'     => self::decode_trace( $data['nxc_slider_trace'] ?? null ),
 		);
 

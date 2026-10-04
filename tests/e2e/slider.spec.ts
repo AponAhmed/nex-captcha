@@ -18,6 +18,11 @@ async function forceSliderMode(page: Page): Promise<void> {
   });
 }
 
+interface Gap {
+  x: number;
+  y: number;
+}
+
 /**
  * The gap position is never sent to the client (see
  * Challenge\SliderChallenge's own docblock) -- it's only visible as a
@@ -26,19 +31,17 @@ async function forceSliderMode(page: Page): Promise<void> {
  * that border's pixels in-browser via Canvas is the legitimate way to
  * locate it, not a bypass: it's exactly the "defeat it visually" bar a
  * real solver (human or bot) has to clear, with no secret extracted.
+ * Neither X nor Y is known ahead of time now (a real 2D puzzle), so
+ * this scans the whole image for the border's bounding box.
  */
-async function findGapX(page: Page): Promise<number> {
+async function findGap(page: Page): Promise<Gap> {
   return page.evaluate(() => {
-    return new Promise<number>((resolve, reject) => {
+    return new Promise<Gap>((resolve, reject) => {
       const bg = document.querySelector<HTMLImageElement>('.nxc-widget__slider-bg');
-      const piece = document.querySelector<HTMLElement>('.nxc-widget__slider-piece');
-      if (!bg || !piece) {
+      if (!bg) {
         reject(new Error('Slider markup not found.'));
         return;
       }
-      // piece.style.top is a percentage of the native 150px HEIGHT, not
-      // a raw pixel value -- see slider.ts's own docblock.
-      const pieceY = Math.round((parseFloat(piece.style.top) / 100) * 150);
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
@@ -50,15 +53,25 @@ async function findGapX(page: Page): Promise<number> {
           return;
         }
         ctx.drawImage(img, 0, 0);
-        const row = ctx.getImageData(0, pieceY, img.naturalWidth, 1).data;
-        for (let x = 0; x < img.naturalWidth; x++) {
-          const [r, g, b] = [row[x * 4], row[x * 4 + 1], row[x * 4 + 2]];
-          if (r === 255 && g === 255 && b === 255) {
-            resolve(x);
-            return;
+        const data = ctx.getImageData(0, 0, img.naturalWidth, img.naturalHeight).data;
+
+        let minX = Infinity;
+        let minY = Infinity;
+        for (let y = 0; y < img.naturalHeight; y++) {
+          for (let x = 0; x < img.naturalWidth; x++) {
+            const i = (y * img.naturalWidth + x) * 4;
+            if (data[i] === 255 && data[i + 1] === 255 && data[i + 2] === 255) {
+              minX = Math.min(minX, x);
+              minY = Math.min(minY, y);
+            }
           }
         }
-        reject(new Error('No white border pixel found in the gap row.'));
+
+        if (!Number.isFinite(minX) || !Number.isFinite(minY)) {
+          reject(new Error('No white border pixel found in the image.'));
+          return;
+        }
+        resolve({ x: minX, y: minY });
       };
       img.onerror = () => reject(new Error('Background image failed to load.'));
       img.src = bg.src;
@@ -77,21 +90,24 @@ async function submitWithWrongCredentials(page: Page) {
 }
 
 test.describe('Slider widget', () => {
-  test('renders as a keyboard-operable ARIA slider', async ({ page }) => {
+  test('renders as a keyboard-operable ARIA slider, movable on both axes', async ({ page }) => {
     await forceSliderMode(page);
     await page.goto('/wp-login.php');
     await waitForSliderWidget(page);
 
     const piece = page.locator('.nxc-widget__slider-piece');
     await expect(piece).toHaveAttribute('role', 'slider');
-    await expect(piece).toHaveAttribute('aria-valuenow', '0');
+    await expect(piece).toHaveAttribute('aria-valuetext', 'Position 0, 0');
     await expect(page.locator('input[name="nxc_slider_x"]')).toHaveValue('0');
+    await expect(page.locator('input[name="nxc_slider_y"]')).toHaveValue('0');
 
     await piece.focus();
     await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowDown');
 
-    await expect(piece).toHaveAttribute('aria-valuenow', '5');
+    await expect(piece).toHaveAttribute('aria-valuetext', 'Position 5, 5');
     await expect(page.locator('input[name="nxc_slider_x"]')).toHaveValue('5');
+    await expect(page.locator('input[name="nxc_slider_y"]')).toHaveValue('5');
   });
 
   test('a correct keyboard-only solve passes through to WordPress\'s own credential check', async ({ page }) => {
@@ -99,12 +115,15 @@ test.describe('Slider widget', () => {
     await page.goto('/wp-login.php');
     await waitForSliderWidget(page);
 
-    const gapX = await findGapX(page);
+    const gap = await findGap(page);
     const piece = page.locator('.nxc-widget__slider-piece');
     await piece.focus();
 
-    for (let moved = 0; moved < gapX; moved += 5) {
+    for (let moved = 0; moved < gap.x; moved += 5) {
       await page.keyboard.press('ArrowRight');
+    }
+    for (let moved = 0; moved < gap.y; moved += 5) {
+      await page.keyboard.press('ArrowDown');
     }
 
     await submitWithWrongCredentials(page);
@@ -119,7 +138,7 @@ test.describe('Slider widget', () => {
     await page.goto('/wp-login.php');
     await waitForSliderWidget(page);
 
-    const gapX = await findGapX(page);
+    const gap = await findGap(page);
     const frame = page.locator('.nxc-widget__slider-frame');
     const piece = page.locator('.nxc-widget__slider-piece');
     const frameBox = await frame.boundingBox();
@@ -128,16 +147,18 @@ test.describe('Slider widget', () => {
       throw new Error('Slider widget did not lay out.');
     }
 
-    // gapX is in native 0-300 units; the frame can render narrower than
-    // that (e.g. wp-login.php's own form is ~270px), so convert via the
-    // actual render scale -- same conversion slider.ts's own drag
-    // handler does.
-    const renderScale = frameBox.width / 300;
-    const targetScreenX = frameBox.x + gapX * renderScale + pieceBox.width / 2;
+    // gap.x/gap.y are in native 0-300x0-150 units; the frame can render
+    // smaller than that (e.g. wp-login.php's own form is ~270px wide),
+    // so convert via the actual render scale -- same conversion
+    // slider.ts's own drag handler does.
+    const scaleX = frameBox.width / 300;
+    const scaleY = frameBox.height / 150;
+    const targetScreenX = frameBox.x + gap.x * scaleX + pieceBox.width / 2;
+    const targetScreenY = frameBox.y + gap.y * scaleY + pieceBox.height / 2;
 
     await page.mouse.move(pieceBox.x + pieceBox.width / 2, pieceBox.y + pieceBox.height / 2);
     await page.mouse.down();
-    await page.mouse.move(targetScreenX, pieceBox.y + pieceBox.height / 2, { steps: 10 });
+    await page.mouse.move(targetScreenX, targetScreenY, { steps: 10 });
     await page.mouse.up();
 
     await submitWithWrongCredentials(page);
@@ -147,18 +168,44 @@ test.describe('Slider widget', () => {
     await expect(error).not.toContainText('Verification failed');
   });
 
-  test('a position outside tolerance fails verification', async ({ page }) => {
+  test('a correct X but wrong Y fails verification (Y genuinely matters)', async ({ page }) => {
     await forceSliderMode(page);
     await page.goto('/wp-login.php');
     await waitForSliderWidget(page);
 
-    const gapX = await findGapX(page);
+    const gap = await findGap(page);
     const piece = page.locator('.nxc-widget__slider-piece');
     await piece.focus();
 
-    const target = Math.min(gapX + 40, 260); // Well outside SliderChallenge::TOLERANCE (5).
-    for (let moved = 0; moved < target; moved += 5) {
+    for (let moved = 0; moved < gap.x; moved += 5) {
       await page.keyboard.press('ArrowRight');
+    }
+    // Deliberately well outside SliderChallenge::TOLERANCE (5) on Y only.
+    const targetY = Math.min(gap.y + 40, 110);
+    for (let moved = 0; moved < targetY; moved += 5) {
+      await page.keyboard.press('ArrowDown');
+    }
+
+    await submitWithWrongCredentials(page);
+
+    await expect(page.locator('#login_error')).toContainText('Verification failed');
+  });
+
+  test('a position outside tolerance on X fails verification', async ({ page }) => {
+    await forceSliderMode(page);
+    await page.goto('/wp-login.php');
+    await waitForSliderWidget(page);
+
+    const gap = await findGap(page);
+    const piece = page.locator('.nxc-widget__slider-piece');
+    await piece.focus();
+
+    const targetX = Math.min(gap.x + 40, 260); // Well outside SliderChallenge::TOLERANCE (5).
+    for (let moved = 0; moved < targetX; moved += 5) {
+      await page.keyboard.press('ArrowRight');
+    }
+    for (let moved = 0; moved < gap.y; moved += 5) {
+      await page.keyboard.press('ArrowDown');
     }
 
     await submitWithWrongCredentials(page);
@@ -192,10 +239,14 @@ test.describe('Slider widget', () => {
     await expect(answer).toBeVisible({ timeout: 10_000 });
     await expect(page.locator('.nxc-widget__slider-piece')).toHaveCount(0);
 
-    const label = await page.locator('.nxc-widget__math-js label').textContent();
-    const match = label?.match(/(\d+)\s*\+\s*(\d+)/);
+    // The question is only in the image's alt text now (questionImage
+    // is the visible, stylized rendering) -- see math.ts's own docblock.
+    const image = page.locator('.nxc-widget__math-js-image');
+    await expect(image).toBeVisible();
+    const alt = await image.getAttribute('alt');
+    const match = alt?.match(/(\d+)\s*\+\s*(\d+)/);
     if (!match) {
-      throw new Error(`Could not parse a question out of: ${label}`);
+      throw new Error(`Could not parse a question out of alt text: ${alt}`);
     }
     const sum = parseInt(match[1], 10) + parseInt(match[2], 10);
 

@@ -4,6 +4,7 @@ import { renderMath, type MathPayload } from './math';
 const PAYLOAD: MathPayload = {
   mode: 'math',
   question: '7 + 3',
+  questionImage: 'data:image/png;base64,aaaa',
   salt: 'abc123?expires=9999999999&form=login&v=1',
   signature: 'deadbeef',
 };
@@ -23,17 +24,27 @@ function hiddenValue(widget: HTMLElement, name: string): string {
   return (widget.querySelector(`input[name="${name}"]`) as HTMLInputElement).value;
 }
 
+function questionImage(widget: HTMLElement): HTMLImageElement {
+  return widget.querySelector('.nxc-widget__math-js-image') as HTMLImageElement;
+}
+
 describe('renderMath', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
   });
 
-  it('renders the question in a label', () => {
+  it('renders the question image from the payload', () => {
     const widget = buildWidget();
     renderMath(widget, PAYLOAD);
 
-    const label = widget.querySelector('.nxc-widget__math-js label') as HTMLLabelElement;
-    expect(label.textContent).toContain('7 + 3');
+    expect(questionImage(widget).src).toBe(PAYLOAD.questionImage);
+  });
+
+  it('carries the real question as alt text, for accessibility despite the stylized image', () => {
+    const widget = buildWidget();
+    renderMath(widget, PAYLOAD);
+
+    expect(questionImage(widget).alt).toContain('7 + 3');
   });
 
   it('renders a visible answer field named nxc_math_answer', () => {
@@ -74,12 +85,17 @@ describe('renderMath', () => {
   it('replaces a previous render instead of duplicating markup or inputs', () => {
     const widget = buildWidget();
     renderMath(widget, PAYLOAD);
-    renderMath(widget, { ...PAYLOAD, question: '2 + 2', salt: 'fresh-salt?expires=9999999999&form=login&v=1' });
+    renderMath(widget, {
+      ...PAYLOAD,
+      question: '2 + 2',
+      questionImage: 'data:image/png;base64,bbbb',
+      salt: 'fresh-salt?expires=9999999999&form=login&v=1',
+    });
 
     expect(widget.querySelectorAll('.nxc-widget__math-js')).toHaveLength(1);
     expect(widget.querySelectorAll('input[name="nxc_math_salt"]')).toHaveLength(1);
     expect(hiddenValue(widget, 'nxc_math_salt')).toBe('fresh-salt?expires=9999999999&form=login&v=1');
-    const label = widget.querySelector('.nxc-widget__math-js label') as HTMLLabelElement;
-    expect(label.textContent).toContain('2 + 2');
+    expect(questionImage(widget).alt).toContain('2 + 2');
+    expect(questionImage(widget).src).toBe('data:image/png;base64,bbbb');
   });
 });

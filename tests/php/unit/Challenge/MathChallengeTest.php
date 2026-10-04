@@ -45,6 +45,23 @@ final class MathChallengeTest extends TestCase {
 		$this->assertArrayNotHasKey( 'answer', $payload, 'The answer must never be sent to the client.' );
 	}
 
+	/**
+	 * questionImage is cosmetic (a classic picture-captcha look), not a
+	 * new security boundary -- the plain question field above stays
+	 * alongside it on purpose, for accessibility. Only asserting shape
+	 * here, not pixel content.
+	 */
+	public function test_create_also_renders_a_distorted_question_image(): void {
+		$payload = MathChallenge::create( self::FORM, 0, self::TTL );
+
+		$this->assertArrayHasKey( 'questionImage', $payload );
+		$this->assertStringStartsWith( 'data:image/png;base64,', $payload['questionImage'] );
+
+		$binary = base64_decode( substr( $payload['questionImage'], strlen( 'data:image/png;base64,' ) ), true );
+		$this->assertNotFalse( $binary );
+		$this->assertSame( "\x89PNG\r\n\x1a\n", substr( (string) $binary, 0, 8 ) );
+	}
+
 	public function test_a_correct_answer_verifies(): void {
 		$payload = MathChallenge::create( self::FORM, 0, self::TTL );
 

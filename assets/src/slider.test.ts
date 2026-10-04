@@ -5,7 +5,6 @@ const PAYLOAD: SliderPayload = {
   mode: 'slider',
   image: 'data:image/png;base64,aaaa',
   piece: 'data:image/png;base64,bbbb',
-  pieceY: 42,
   salt: 'abc123?expires=9999999999&form=login&v=1',
   signature: 'deadbeef',
 };
@@ -50,11 +49,6 @@ describe('renderSlider', () => {
     const bg = widget.querySelector('.nxc-widget__slider-bg') as HTMLImageElement;
     expect(bg.src).toBe(PAYLOAD.image);
     expect(piece(widget).style.backgroundImage).toContain(PAYLOAD.piece);
-    // Percentage of HEIGHT (150), not a raw pixel value -- so the piece
-    // scales in lockstep with the background image at any rendered
-    // size (see the module docblock: a fixed-pixel position drifted
-    // away from the image's own visually-shrunk gap on a narrow form).
-    expect(piece(widget).style.top).toBe(`${(42 / 150) * 100}%`);
   });
 
   it('sizes the piece as a percentage of the native dimensions, not fixed pixels', () => {
@@ -66,16 +60,17 @@ describe('renderSlider', () => {
     expect(p.style.height).toBe(`${(40 / 150) * 100}%`);
   });
 
-  it('starts the piece at the left edge with matching ARIA state', () => {
+  it('starts the piece at the top-left corner with matching ARIA state', () => {
     const widget = buildWidget();
     render(widget, PAYLOAD);
 
     const p = piece(widget);
     expect(p.getAttribute('role')).toBe('slider');
-    expect(p.getAttribute('aria-valuemin')).toBe('0');
-    expect(p.getAttribute('aria-valuemax')).toBe('260'); // 300 - 40
-    expect(p.getAttribute('aria-valuenow')).toBe('0');
+    expect(p.getAttribute('aria-valuetext')).toBe('Position 0, 0');
+    expect(p.style.left).toBe('0%');
+    expect(p.style.top).toBe('0%');
     expect(hiddenValue(widget, 'nxc_slider_x')).toBe('0');
+    expect(hiddenValue(widget, 'nxc_slider_y')).toBe('0');
   });
 
   it('sets the salt and signature hidden inputs once from the payload', () => {
@@ -97,8 +92,9 @@ describe('renderSlider', () => {
 
     pressKey(piece(widget), 'ArrowRight');
 
-    expect(piece(widget).getAttribute('aria-valuenow')).toBe('5');
     expect(hiddenValue(widget, 'nxc_slider_x')).toBe('5');
+    expect(hiddenValue(widget, 'nxc_slider_y')).toBe('0');
+    expect(piece(widget).getAttribute('aria-valuetext')).toBe('Position 5, 0');
   });
 
   it('moves left by the keyboard step on ArrowLeft, clamped at 0', () => {
@@ -110,20 +106,42 @@ describe('renderSlider', () => {
     expect(hiddenValue(widget, 'nxc_slider_x')).toBe('0');
   });
 
-  it('clamps at the right bound and jumps there on End', () => {
+  it('moves down by the keyboard step on ArrowDown', () => {
+    const widget = buildWidget();
+    render(widget, PAYLOAD);
+
+    pressKey(piece(widget), 'ArrowDown');
+
+    expect(hiddenValue(widget, 'nxc_slider_y')).toBe('5');
+    expect(hiddenValue(widget, 'nxc_slider_x')).toBe('0');
+  });
+
+  it('moves up by the keyboard step on ArrowUp, clamped at 0', () => {
+    const widget = buildWidget();
+    render(widget, PAYLOAD);
+
+    pressKey(piece(widget), 'ArrowUp');
+
+    expect(hiddenValue(widget, 'nxc_slider_y')).toBe('0');
+  });
+
+  it('clamps at the bottom-right bound and jumps there on End', () => {
     const widget = buildWidget();
     render(widget, PAYLOAD);
 
     pressKey(piece(widget), 'End');
 
-    expect(hiddenValue(widget, 'nxc_slider_x')).toBe('260');
+    expect(hiddenValue(widget, 'nxc_slider_x')).toBe('260'); // 300 - 40
+    expect(hiddenValue(widget, 'nxc_slider_y')).toBe('110'); // 150 - 40
 
     pressKey(piece(widget), 'ArrowRight');
+    pressKey(piece(widget), 'ArrowDown');
 
     expect(hiddenValue(widget, 'nxc_slider_x')).toBe('260');
+    expect(hiddenValue(widget, 'nxc_slider_y')).toBe('110');
   });
 
-  it('jumps back to 0 on Home', () => {
+  it('jumps back to the top-left corner on Home', () => {
     const widget = buildWidget();
     render(widget, PAYLOAD);
 
@@ -131,9 +149,10 @@ describe('renderSlider', () => {
     pressKey(piece(widget), 'Home');
 
     expect(hiddenValue(widget, 'nxc_slider_x')).toBe('0');
+    expect(hiddenValue(widget, 'nxc_slider_y')).toBe('0');
   });
 
-  it('grows the trace with each keyboard move', () => {
+  it('grows the trace with each keyboard move, tracking both axes', () => {
     const widget = buildWidget();
     render(widget, PAYLOAD);
 
@@ -141,12 +160,16 @@ describe('renderSlider', () => {
     expect(traceAfterRender).toHaveLength(1);
 
     pressKey(piece(widget), 'ArrowRight');
-    pressKey(piece(widget), 'ArrowRight');
+    pressKey(piece(widget), 'ArrowDown');
 
     const trace = JSON.parse(hiddenValue(widget, 'nxc_slider_trace'));
     expect(trace).toHaveLength(3);
-    expect(trace.map((point: { x: number }) => point.x)).toEqual([0, 5, 10]);
-    trace.forEach((point: { x: number; t: number }) => {
+    expect(trace.map((point: { x: number; y: number }) => [point.x, point.y])).toEqual([
+      [0, 0],
+      [5, 0],
+      [5, 5],
+    ]);
+    trace.forEach((point: { x: number; y: number; t: number }) => {
       expect(typeof point.t).toBe('number');
     });
   });
@@ -160,6 +183,7 @@ describe('renderSlider', () => {
 
     expect(widget.querySelectorAll('.nxc-widget__slider')).toHaveLength(1);
     expect(widget.querySelectorAll('input[name="nxc_slider_x"]')).toHaveLength(1);
+    expect(widget.querySelectorAll('input[name="nxc_slider_y"]')).toHaveLength(1);
     expect(hiddenValue(widget, 'nxc_slider_salt')).toBe('fresh-salt?expires=9999999999&form=login&v=1');
     expect(hiddenValue(widget, 'nxc_slider_x')).toBe('0');
   });

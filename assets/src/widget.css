@@ -116,3 +116,9 @@
   color: var(--nxc-color-fg);
   padding: 4px 8px;
 }
+
+.nxc-widget__math-js-image {
+  display: block;
+  margin-bottom: 8px;
+  border: 1px solid var(--nxc-color-border);
+}

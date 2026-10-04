@@ -2,22 +2,25 @@
  * Renders the slider puzzle challenge and reports the drag trace to the
  * server for verification.
  *
- * The gap X position is never sent to the client (see
- * Challenge\SliderChallenge's own docblock), so unlike the PoW path this
- * widget can never locally confirm success -- status text stays neutral
- * guidance, not a "Verified." claim the server might contradict.
+ * The gap position is never sent to the client (see
+ * Challenge\SliderChallenge's own docblock) -- a real 2D jigsaw puzzle,
+ * not a 1D horizontal slider, so both X and Y are secret. Unlike the
+ * PoW path this widget can never locally confirm success -- status text
+ * stays neutral guidance, not a "Verified." claim the server might
+ * contradict.
  *
- * All positions here (the trace, nxc_slider_x, the keyboard step) live
- * in the backend's own native 0-300 coordinate space regardless of how
- * large the widget actually renders on screen -- e.g. wp-login.php's
- * own form is narrower than 300px, so the background image and the
- * piece both get visually scaled down by the browser. The piece's own
- * on-screen left/top/size are expressed as percentages of that native
- * space (toPercent()), so they scale in lockstep with the image
- * (confirmed live: a fixed-pixel piece position drifted away from the
- * image's own visually-shrunk gap, failing bad_position every time).
- * Pointer drag converts real on-screen pixel movement back into native
- * units via the container's actual rendered width for the same reason.
+ * All positions here (the trace, nxc_slider_x/y, the keyboard step)
+ * live in the backend's own native 300x150 coordinate space regardless
+ * of how large the widget actually renders on screen -- e.g.
+ * wp-login.php's own form is narrower than 300px, so the background
+ * image and the piece both get visually scaled down by the browser.
+ * The piece's own on-screen left/top/size are expressed as percentages
+ * of that native space (toPercent()), so they scale in lockstep with
+ * the image (confirmed live: a fixed-pixel piece position drifted away
+ * from the image's own visually-shrunk gap, failing bad_position every
+ * time). Pointer drag converts real on-screen pixel movement back into
+ * native units via the frame's actual rendered size for the same
+ * reason.
  */
 
 // Mirrors Challenge\SliderChallenge's own constants (src/Challenge/SliderChallenge.php).
@@ -26,6 +29,7 @@ const HEIGHT = 150;
 const PIECE_SIZE = 40;
 const KEYBOARD_STEP = 5; // Matches SliderChallenge::TOLERANCE, so a keyboard user can land exactly.
 const MAX_LEFT = WIDTH - PIECE_SIZE;
+const MAX_TOP = HEIGHT - PIECE_SIZE;
 
 function toPercent(value: number, of: number): string {
   return `${(value / of) * 100}%`;
@@ -35,13 +39,13 @@ export interface SliderPayload {
   mode: 'slider';
   image: string;
   piece: string;
-  pieceY: number;
   salt: string;
   signature: string;
 }
 
 interface TracePoint {
   x: number;
+  y: number;
   t: number;
 }
 
@@ -83,9 +87,7 @@ export function renderSlider(widget: HTMLElement, payload: SliderPayload, onRequ
   // (via the same aspect-ratio), not the outer container, which is
   // taller once the alternative button below is added. Percentages
   // against the taller container previously threw off the piece's
-  // vertical size/position relative to the image (not the horizontal
-  // drag math, which only ever used the container's WIDTH -- same
-  // basis either way).
+  // vertical size/position relative to the image.
   const frame = document.createElement('div');
   frame.className = 'nxc-widget__slider-frame';
 
@@ -99,11 +101,8 @@ export function renderSlider(widget: HTMLElement, payload: SliderPayload, onRequ
   piece.className = 'nxc-widget__slider-piece';
   piece.tabIndex = 0;
   piece.setAttribute('role', 'slider');
-  piece.setAttribute('aria-label', 'Drag to align the puzzle piece with the gap');
-  piece.setAttribute('aria-valuemin', '0');
-  piece.setAttribute('aria-valuemax', String(MAX_LEFT));
+  piece.setAttribute('aria-label', 'Drag with arrow keys or a pointer to align the puzzle piece with the gap');
   piece.style.backgroundImage = `url(${payload.piece})`;
-  piece.style.top = toPercent(payload.pieceY, HEIGHT);
   piece.style.width = toPercent(PIECE_SIZE, WIDTH);
   piece.style.height = toPercent(PIECE_SIZE, HEIGHT);
 
@@ -122,35 +121,52 @@ export function renderSlider(widget: HTMLElement, payload: SliderPayload, onRequ
   const saltInput = hiddenInput('nxc_slider_salt', payload.salt);
   const signatureInput = hiddenInput('nxc_slider_signature', payload.signature);
   const xInput = hiddenInput('nxc_slider_x', '0');
+  const yInput = hiddenInput('nxc_slider_y', '0');
   const traceInput = hiddenInput('nxc_slider_trace', '[]');
 
-  widget.append(container, saltInput, signatureInput, xInput, traceInput);
+  widget.append(container, saltInput, signatureInput, xInput, yInput, traceInput);
 
   const traceStart = performance.now();
   const trace: TracePoint[] = [];
   let currentX = 0;
+  let currentY = 0;
 
-  const setPosition = (left: number): void => {
+  // Starts at the top-left corner (0, 0) -- the piece has to be
+  // dragged/keyed to wherever the gap actually is, on both axes.
+  const setPosition = (left: number, top: number): void => {
     currentX = clamp(left, 0, MAX_LEFT);
+    currentY = clamp(top, 0, MAX_TOP);
     piece.style.left = toPercent(currentX, WIDTH);
-    piece.setAttribute('aria-valuenow', String(currentX));
+    piece.style.top = toPercent(currentY, HEIGHT);
+    // No native min/max/now trio here -- a single numeric range can't
+    // describe a 2D position, so aria-valuetext carries it as text.
+    piece.setAttribute('aria-valuetext', `Position ${currentX}, ${currentY}`);
     xInput.value = String(currentX);
-    trace.push({ x: currentX, t: performance.now() - traceStart });
+    yInput.value = String(currentY);
+    trace.push({ x: currentX, y: currentY, t: performance.now() - traceStart });
     traceInput.value = JSON.stringify(trace);
   };
 
-  setPosition(0);
+  setPosition(0, 0);
 
   let dragStartLeft = 0;
+  let dragStartTop = 0;
   let dragStartClientX = 0;
+  let dragStartClientY = 0;
 
   const onPointerMove = (event: PointerEvent): void => {
     // Real on-screen pixels -> native units, via however large the
-    // frame actually rendered (WIDTH/renderedWidth) -- 1:1 only when
-    // the widget renders at its full native size.
-    const renderedWidth = frame.getBoundingClientRect().width || WIDTH;
-    const scale = WIDTH / renderedWidth;
-    setPosition(dragStartLeft + (event.clientX - dragStartClientX) * scale);
+    // frame actually rendered -- 1:1 only when the widget renders at
+    // its full native size. Computed per axis for robustness, though
+    // the frame's locked aspect-ratio keeps both scales equal in
+    // practice.
+    const frameBox = frame.getBoundingClientRect();
+    const scaleX = WIDTH / (frameBox.width || WIDTH);
+    const scaleY = HEIGHT / (frameBox.height || HEIGHT);
+    setPosition(
+      dragStartLeft + (event.clientX - dragStartClientX) * scaleX,
+      dragStartTop + (event.clientY - dragStartClientY) * scaleY,
+    );
   };
 
   const onPointerUp = (event: PointerEvent): void => {
@@ -161,7 +177,9 @@ export function renderSlider(widget: HTMLElement, payload: SliderPayload, onRequ
 
   piece.addEventListener('pointerdown', (event: PointerEvent) => {
     dragStartLeft = currentX;
+    dragStartTop = currentY;
     dragStartClientX = event.clientX;
+    dragStartClientY = event.clientY;
     piece.setPointerCapture(event.pointerId);
     piece.addEventListener('pointermove', onPointerMove);
     piece.addEventListener('pointerup', onPointerUp);
@@ -170,16 +188,22 @@ export function renderSlider(widget: HTMLElement, payload: SliderPayload, onRequ
   piece.addEventListener('keydown', (event: KeyboardEvent) => {
     if (event.key === 'ArrowLeft') {
       event.preventDefault();
-      setPosition(currentX - KEYBOARD_STEP);
+      setPosition(currentX - KEYBOARD_STEP, currentY);
     } else if (event.key === 'ArrowRight') {
       event.preventDefault();
-      setPosition(currentX + KEYBOARD_STEP);
+      setPosition(currentX + KEYBOARD_STEP, currentY);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setPosition(currentX, currentY - KEYBOARD_STEP);
+    } else if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setPosition(currentX, currentY + KEYBOARD_STEP);
     } else if (event.key === 'Home') {
       event.preventDefault();
-      setPosition(0);
+      setPosition(0, 0);
     } else if (event.key === 'End') {
       event.preventDefault();
-      setPosition(MAX_LEFT);
+      setPosition(MAX_LEFT, MAX_TOP);
     }
   });
 }

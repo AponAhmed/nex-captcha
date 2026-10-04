@@ -35,14 +35,13 @@ $nxc_math     = MathChallenge::create( $form_id, 0, (int) apply_filters( 'nxc_ch
 			<input type="hidden" name="nxc_math_salt" value="<?php echo esc_attr( $nxc_math['salt'] ); ?>" />
 			<input type="hidden" name="nxc_math_signature" value="<?php echo esc_attr( $nxc_math['signature'] ); ?>" />
 			<label for="<?php echo esc_attr( $nxc_field_id ); ?>_math">
-				<?php
-				printf(
-					/* translators: %s: a simple addition question, e.g. "7 + 5" */
-					esc_html__( 'Verify you are human -- what is %s?', 'nex-captcha' ),
-					esc_html( $nxc_math['question'] )
-				);
-				?>
+				<?php esc_html_e( 'Verify you are human -- what is shown below?', 'nex-captcha' ); ?>
 			</label>
+			<?php
+			/* translators: %s: a simple addition question, e.g. "7 + 5" */
+			$nxc_math_alt = sprintf( __( 'What is %s?', 'nex-captcha' ), $nxc_math['question'] );
+			?>
+			<img class="nxc-widget__math-js-image" src="<?php echo esc_attr( $nxc_math['questionImage'] ); ?>" alt="<?php echo esc_attr( $nxc_math_alt ); ?>" />
 			<input type="text" inputmode="numeric" name="nxc_math_answer" id="<?php echo esc_attr( $nxc_field_id ); ?>_math" required="required" />
 		</div>
 	</noscript>
