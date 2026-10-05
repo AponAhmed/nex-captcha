@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { hasWebCrypto, interactionInput, trackInteraction } from './widget';
+import { hasWebCrypto, interactionInput, setButtonsDisabled, trackInteraction } from './widget';
 
 function buildFixture(): { widget: HTMLElement; form: HTMLFormElement } {
   document.body.innerHTML = `
@@ -63,6 +63,87 @@ describe('trackInteraction', () => {
     const widget = document.querySelector('.nxc-widget') as HTMLElement;
 
     expect(() => trackInteraction(widget)).not.toThrow();
+  });
+});
+
+describe('setButtonsDisabled', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('disables every submit control in the enclosing form', () => {
+    document.body.innerHTML = `
+      <form>
+        <div class="nxc-widget"></div>
+        <button type="submit">Log In</button>
+        <input type="submit" value="Also submit" />
+        <button type="button">Not a submit</button>
+      </form>
+    `;
+    const widget = document.querySelector('.nxc-widget') as HTMLElement;
+
+    setButtonsDisabled(widget, true);
+
+    const [submitButton, submitInput, plainButton] = document.querySelectorAll('button, input');
+    expect((submitButton as HTMLButtonElement).disabled).toBe(true);
+    expect((submitInput as HTMLInputElement).disabled).toBe(true);
+    expect((plainButton as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('re-enables after being disabled', () => {
+    document.body.innerHTML = `
+      <form>
+        <div class="nxc-widget"></div>
+        <button type="submit">Log In</button>
+      </form>
+    `;
+    const widget = document.querySelector('.nxc-widget') as HTMLElement;
+    const button = document.querySelector('button') as HTMLButtonElement;
+
+    setButtonsDisabled(widget, true);
+    expect(button.disabled).toBe(true);
+
+    setButtonsDisabled(widget, false);
+    expect(button.disabled).toBe(false);
+  });
+
+  it('does nothing if the widget has no enclosing form', () => {
+    document.body.innerHTML = '<div class="nxc-widget"></div>';
+    const widget = document.querySelector('.nxc-widget') as HTMLElement;
+
+    expect(() => setButtonsDisabled(widget, true)).not.toThrow();
+  });
+});
+
+describe('wpcf7submit re-arm', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('re-disables the submit button, so a second CF7 send on the same page waits for a fresh token', () => {
+    // Never resolves -- this test only checks the synchronous state
+    // solveWidget() sets before its first await, not the fetch outcome.
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})));
+
+    document.body.innerHTML = `
+      <form class="wpcf7-form">
+        <div class="nxc-widget" data-form="cf7:1" data-rest-url="https://example.test/wp-json/nexcaptcha/v1/">
+          <input type="hidden" name="nxc_token" value="stale-token-from-first-send" />
+        </div>
+        <button type="submit">Send</button>
+      </form>
+    `;
+    const form = document.querySelector('form') as HTMLFormElement;
+    const button = document.querySelector('button') as HTMLButtonElement;
+    button.disabled = false;
+
+    form.dispatchEvent(new Event('wpcf7submit', { bubbles: true }));
+
+    expect(button.disabled).toBe(true);
   });
 });
 

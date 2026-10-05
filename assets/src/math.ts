@@ -16,6 +16,8 @@
  * screen readers here would defeat that purpose).
  */
 
+import { setStatus } from './status';
+
 export interface MathPayload {
   mode: 'math';
   question: string;
@@ -45,10 +47,7 @@ function hiddenInput(name: string, value: string): HTMLInputElement {
 export function renderMath(widget: HTMLElement, payload: MathPayload): void {
   clearPreviousRender(widget);
 
-  const status = widget.querySelector<HTMLElement>('.nxc-widget__status');
-  if (status) {
-    status.textContent = 'Answer the question below, then submit the form.';
-  }
+  setStatus(widget, 'Answer the question below, then submit the form.', 'info');
 
   const container = document.createElement('div');
   container.className = 'nxc-widget__math-js';

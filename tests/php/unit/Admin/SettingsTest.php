@@ -68,12 +68,7 @@ final class SettingsTest extends TestCase {
 	public function test_sanitize_falls_back_to_the_current_value_for_an_invalid_difficulty(): void {
 		Functions\expect( 'get_option' )->once()->andReturn( array( 'difficulty' => 'high' ) );
 
-		$sanitized = Settings::sanitize(
-			array(
-				'_section'   => 'general',
-				'difficulty' => 'not-a-real-difficulty',
-			)
-		);
+		$sanitized = Settings::sanitize( array( 'difficulty' => 'not-a-real-difficulty' ) );
 
 		$this->assertSame( 'high', $sanitized['difficulty'] );
 	}
@@ -81,12 +76,7 @@ final class SettingsTest extends TestCase {
 	public function test_sanitize_accepts_a_valid_difficulty(): void {
 		Functions\expect( 'get_option' )->once()->andReturn( array() );
 
-		$sanitized = Settings::sanitize(
-			array(
-				'_section'   => 'general',
-				'difficulty' => 'low',
-			)
-		);
+		$sanitized = Settings::sanitize( array( 'difficulty' => 'low' ) );
 
 		$this->assertSame( 'low', $sanitized['difficulty'] );
 	}
@@ -96,8 +86,7 @@ final class SettingsTest extends TestCase {
 
 		$sanitized = Settings::sanitize(
 			array(
-				'_section' => 'forms',
-				'forms'    => array(
+				'forms' => array(
 					'login'    => '1',
 					'comments' => '',
 				),
@@ -112,62 +101,54 @@ final class SettingsTest extends TestCase {
 	}
 
 	/**
-	 * The multi-tab admin UI means a settings save for ANY OTHER tab
-	 * must leave the Forms tab's own values exactly as they were --
-	 * this is the regression test for the bug that originally forced
-	 * this whole _section-gated design: saving the Forms tab used to
-	 * silently wipe General/Security's fields back to empty/false, and
-	 * vice versa.
+	 * The settings screen now renders General/Forms/Security as stacked
+	 * panels inside ONE shared <form> (not one per tab, which used to
+	 * silently wipe every OTHER section's fields on save -- see
+	 * Settings::sanitize()'s own docblock for that history). This is
+	 * the regression test for the assumption that fix now relies on:
+	 * every real submit carries every section's fields together, and
+	 * sanitize() must handle all of them correctly in one pass.
 	 */
-	public function test_sanitize_leaves_other_sections_untouched(): void {
-		Functions\expect( 'get_option' )->once()->andReturn(
-			array(
-				'escalation'   => true,
-				'forms'        => array(
-					'login'        => true,
-					'register'     => true,
-					'lostpassword' => true,
-					'comments'     => true,
-				),
-				'bypass_roles' => array( 'administrator' ),
-			)
-		);
+	public function test_sanitize_handles_every_sections_fields_together_in_one_submit(): void {
+		Functions\expect( 'get_option' )->once()->andReturn( array() );
 
-		// Submitting the Forms tab alone -- no escalation/bypass_roles
-		// fields present at all, same as that tab's real <form>.
 		$sanitized = Settings::sanitize(
 			array(
-				'_section' => 'forms',
-				'forms'    => array( 'login' => '1' ),
+				'difficulty'        => 'high',
+				'custom_maxnumber'  => 50000,
+				'escalation'        => '1',
+				'forms'             => array(
+					'login'    => '1',
+					'register' => '1',
+				),
+				'allowlist'         => "203.0.113.5\n203.0.113.0/24",
+				'bypass_roles'      => array( 'Administrator', 'Editor' ),
+				'rate_limit'        => array(
+					'max'    => 20,
+					'window' => 300,
+				),
+				'time_trap_seconds' => 3,
 			)
 		);
-
-		$this->assertTrue( $sanitized['escalation'] );
-		$this->assertSame( array( 'administrator' ), $sanitized['bypass_roles'] );
-	}
-
-	public function test_sanitize_with_an_unrecognized_section_changes_nothing(): void {
-		Functions\expect( 'get_option' )->once()->andReturn(
-			array(
-				'difficulty' => 'high',
-				'forms'      => array( 'login' => true ),
-			)
-		);
-
-		$sanitized = Settings::sanitize( array( 'difficulty' => 'low' ) );
 
 		$this->assertSame( 'high', $sanitized['difficulty'] );
+		$this->assertSame( 50000, $sanitized['custom_maxnumber'] );
+		$this->assertTrue( $sanitized['escalation'] );
 		$this->assertTrue( $sanitized['forms']['login'] );
+		$this->assertTrue( $sanitized['forms']['register'] );
+		$this->assertFalse( $sanitized['forms']['lostpassword'] );
+		$this->assertSame( array( '203.0.113.5', '203.0.113.0/24' ), $sanitized['allowlist'] );
+		$this->assertSame( array( 'administrator', 'editor' ), $sanitized['bypass_roles'] );
+		$this->assertSame( 20, $sanitized['rate_limit']['max'] );
+		$this->assertSame( 300, $sanitized['rate_limit']['window'] );
+		$this->assertSame( 3, $sanitized['time_trap_seconds'] );
 	}
 
 	public function test_sanitize_filters_out_invalid_allowlist_entries(): void {
 		Functions\expect( 'get_option' )->once()->andReturn( array() );
 
 		$sanitized = Settings::sanitize(
-			array(
-				'_section'  => 'security',
-				'allowlist' => "203.0.113.5\nnot-an-ip\n203.0.113.0/24",
-			)
+			array( 'allowlist' => "203.0.113.5\nnot-an-ip\n203.0.113.0/24" )
 		);
 
 		$this->assertSame( array( '203.0.113.5', '203.0.113.0/24' ), $sanitized['allowlist'] );
@@ -177,10 +158,7 @@ final class SettingsTest extends TestCase {
 		Functions\expect( 'get_option' )->once()->andReturn( array() );
 
 		$sanitized = Settings::sanitize(
-			array(
-				'_section'     => 'security',
-				'bypass_roles' => array( 'Administrator', 'administrator', 'Editor' ),
-			)
+			array( 'bypass_roles' => array( 'Administrator', 'administrator', 'Editor' ) )
 		);
 
 		$this->assertSame( array( 'administrator', 'editor' ), $sanitized['bypass_roles'] );
@@ -191,7 +169,6 @@ final class SettingsTest extends TestCase {
 
 		$sanitized = Settings::sanitize(
 			array(
-				'_section'   => 'security',
 				'rate_limit' => array(
 					'max'    => -5,
 					'window' => 'nope',
@@ -201,5 +178,27 @@ final class SettingsTest extends TestCase {
 
 		$this->assertSame( 10, $sanitized['rate_limit']['max'] );
 		$this->assertSame( 600, $sanitized['rate_limit']['window'] );
+	}
+
+	/**
+	 * Fields with no admin UI control yet (mode, theme, trusted_proxies,
+	 * fail_mode, logging) must never be touched by a settings save, even
+	 * though every save now processes the full $input unconditionally --
+	 * see Settings::sanitize()'s own docblock.
+	 */
+	public function test_sanitize_never_touches_fields_with_no_admin_ui(): void {
+		Functions\expect( 'get_option' )->once()->andReturn(
+			array(
+				'logging' => array(
+					'enabled'        => true,
+					'retention_days' => 30,
+				),
+			)
+		);
+
+		$sanitized = Settings::sanitize( array( 'difficulty' => 'low' ) );
+
+		$this->assertTrue( $sanitized['logging']['enabled'] );
+		$this->assertSame( 30, $sanitized['logging']['retention_days'] );
 	}
 }

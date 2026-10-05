@@ -3,7 +3,7 @@
  * Plugin Name:       NexCaptcha
  * Plugin URI:        https://nexcaptcha.bitflw.com
  * Description:       Self-hosted, privacy-first CAPTCHA. Invisible proof-of-work by default, with slider and math fallbacks. No external calls, no cookies.
- * Version:           0.1.0
+ * Version:           0.2.5
  * Requires at least: 6.4
  * Requires PHP:      8.0
  * Author:            Bitflw
@@ -20,7 +20,7 @@ declare( strict_types=1 );
 
 defined( 'ABSPATH' ) || die;
 
-define( 'NXC_VERSION', '0.1.0' );
+define( 'NXC_VERSION', '0.2.5' );
 define( 'NXC_FILE', __FILE__ );
 define( 'NXC_PATH', plugin_dir_path( __FILE__ ) );
 define( 'NXC_URL', plugin_dir_url( __FILE__ ) );

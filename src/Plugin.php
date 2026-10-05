@@ -5,6 +5,7 @@ namespace Bitflw\NexCaptcha;
 
 use Bitflw\NexCaptcha\Admin\LogsTable;
 use Bitflw\NexCaptcha\Admin\SettingsPage;
+use Bitflw\NexCaptcha\Integrations\ContactForm7;
 use Bitflw\NexCaptcha\Integrations\IntegrationInterface;
 use Bitflw\NexCaptcha\Integrations\WpComments;
 use Bitflw\NexCaptcha\Integrations\WpLogin;
@@ -65,6 +66,7 @@ final class Plugin {
 				new WpRegister(),
 				new WpLostPassword(),
 				new WpComments(),
+				new ContactForm7(),
 			)
 		);
 	}

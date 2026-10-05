@@ -3,22 +3,84 @@ declare( strict_types=1 );
 
 namespace Bitflw\NexCaptcha\Admin;
 
+use Bitflw\NexCaptcha\Core\Assets;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Renders Settings -> NexCaptcha. General, Forms, Security and Logs are
- * shown -- Appearance/Tools are added once Phase 5 gives them a real
- * backing implementation (see docs/PLAN.md section 2.4).
+ * Renders Settings -> NexCaptcha: General, Forms and Security as stacked
+ * panels on one page (no tab-switching -- every panel lives inside ONE
+ * shared <form>, so every Save button submits the complete settings
+ * state together; see Settings::sanitize()'s own docblock for why that
+ * matters), plus a slide-in Logs drawer. Appearance/Tools are added
+ * once Phase 5 gives them a real backing implementation (see
+ * docs/PLAN.md section 2.4).
  */
 class SettingsPage {
 
 	private const SLUG   = 'nex-captcha';
 	private const OPTION = 'nxc_settings';
-	private const TABS   = array( 'general', 'forms', 'security', 'logs' );
+
+	private const NONCE_ACTION = 'nxc_admin';
 
 	public static function register(): void {
 		add_action( 'admin_menu', array( self::class, 'add_page' ) );
 		add_action( 'admin_init', array( self::class, 'register_setting' ) );
+		add_action( 'admin_enqueue_scripts', array( self::class, 'enqueue_assets' ) );
+		add_action( 'wp_ajax_nxc_save_settings', array( self::class, 'ajax_save_settings' ) );
+		add_action( 'wp_ajax_nxc_filter_logs', array( self::class, 'ajax_filter_logs' ) );
+	}
+
+	/**
+	 * AJAX counterpart to the plain options.php submit -- same
+	 * Settings::sanitize()/update_option() path, just returning JSON
+	 * instead of a redirect so the settings screen never has to reload.
+	 * The <form>'s own action="options.php" stays in the markup as a
+	 * no-JS fallback; this is purely a progressive enhancement.
+	 */
+	public static function ajax_save_settings(): void {
+		check_ajax_referer( self::NONCE_ACTION, 'nonce' );
+
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => __( 'You do not have permission to do this.', 'nex-captcha' ) ), 403 );
+		}
+
+		$raw = isset( $_POST[ self::OPTION ] ) && is_array( $_POST[ self::OPTION ] )
+			? wp_unslash( $_POST[ self::OPTION ] ) // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Settings::sanitize() (called by update()) is the sanitizer.
+			: array();
+
+		Settings::update( $raw );
+
+		wp_send_json_success( array( 'message' => __( 'Settings saved.', 'nex-captcha' ) ) );
+	}
+
+	/**
+	 * Re-renders the Logs drawer's table for a given filter/page without
+	 * reloading the screen. Reuses LogsTable::prepare_items() verbatim by
+	 * feeding sanitized values through $_GET for this request only --
+	 * the same keys current_filters()/prepare_items() already read when
+	 * the table renders on a normal GET page load, so there's exactly
+	 * one query implementation instead of a parallel one for AJAX.
+	 */
+	public static function ajax_filter_logs(): void {
+		check_ajax_referer( self::NONCE_ACTION, 'nonce' );
+
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => __( 'You do not have permission to do this.', 'nex-captcha' ) ), 403 );
+		}
+
+		$_GET['nxc_result'] = isset( $_POST['nxc_result'] ) ? sanitize_key( wp_unslash( $_POST['nxc_result'] ) ) : '';
+		$_GET['nxc_form']   = isset( $_POST['nxc_form'] ) ? sanitize_key( wp_unslash( $_POST['nxc_form'] ) ) : '';
+		$_GET['paged']      = isset( $_POST['paged'] ) ? max( 1, (int) $_POST['paged'] ) : 1;
+
+		$table = new LogsTable();
+		$table->prepare_items();
+
+		ob_start();
+		$table->display();
+		$html = ob_get_clean();
+
+		wp_send_json_success( array( 'html' => $html ) );
 	}
 
 	public static function add_page(): void {
@@ -29,6 +91,19 @@ class SettingsPage {
 			self::SLUG,
 			array( self::class, 'render' )
 		);
+	}
+
+	/**
+	 * add_options_page() always names its hook suffix this way -- only
+	 * loading the admin stylesheet here, not unconditionally, keeps it
+	 * from ever reaching the rest of wp-admin.
+	 */
+	public static function enqueue_assets( string $hook_suffix ): void {
+		if ( 'settings_page_' . self::SLUG !== $hook_suffix ) {
+			return;
+		}
+
+		Assets::enqueue_admin();
 	}
 
 	public static function register_setting(): void {
@@ -48,83 +123,90 @@ class SettingsPage {
 			return;
 		}
 
-		$tab = self::current_tab();
+		$settings = Settings::all();
 		?>
-		<div class="wrap">
-			<h1><?php esc_html_e( 'NexCaptcha', 'nex-captcha' ); ?></h1>
-			<h2 class="nav-tab-wrapper">
-				<?php foreach ( self::TABS as $tab_id ) : ?>
-					<a href="<?php echo esc_url( self::tab_url( $tab_id ) ); ?>" class="nav-tab<?php echo $tab_id === $tab ? ' nav-tab-active' : ''; ?>">
-						<?php echo esc_html( self::tab_label( $tab_id ) ); ?>
-					</a>
-				<?php endforeach; ?>
-			</h2>
-			<?php if ( 'logs' === $tab ) : ?>
-				<?php self::render_logs_tab(); ?>
-			<?php else : ?>
-				<form method="post" action="options.php">
-					<?php
-					settings_fields( self::SLUG );
-					// Tells Settings::sanitize() which tab's fields are
-					// actually present in this particular submit -- see
-					// its own docblock for why that matters.
-					?>
-					<input type="hidden" name="<?php echo esc_attr( self::OPTION ); ?>[_section]" value="<?php echo esc_attr( $tab ); ?>" />
-					<?php
-					self::render_tab( $tab, Settings::all() );
-					submit_button();
-					?>
-				</form>
-			<?php endif; ?>
+		<div class="wrap nxc-admin">
+			<div class="nxc-card nxc-identity">
+				<div class="nxc-card__body nxc-identity__top">
+					<span class="nxc-icon-chip">
+						<?php echo Icons::svg( 'shield', 22 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Icons::svg() returns static, plugin-authored SVG markup from a fixed internal path map, not user input. ?>
+					</span>
+					<div class="nxc-identity__text">
+						<h1>
+							<?php esc_html_e( 'NexCaptcha', 'nex-captcha' ); ?>
+							<span class="nxc-version-pill">v<?php echo esc_html( NXC_VERSION ); ?></span>
+						</h1>
+						<p class="nxc-admin__tagline"><?php esc_html_e( 'Self-hosted, privacy-first form protection.', 'nex-captcha' ); ?></p>
+					</div>
+					<button type="button" id="nxc-view-logs" class="button nxc-identity__logs-btn">
+						<?php echo Icons::svg( 'list', 16 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- see Icons::svg() docblock. ?>
+						<?php esc_html_e( 'View Logs', 'nex-captcha' ); ?>
+					</button>
+				</div>
+			</div>
+
+			<form id="nxc-settings-form" method="post" action="options.php" data-nonce="<?php echo esc_attr( wp_create_nonce( self::NONCE_ACTION ) ); ?>">
+				<?php settings_fields( self::SLUG ); ?>
+
+				<div class="nxc-card">
+					<div class="nxc-card__head">
+						<?php echo Icons::svg( 'settings', 18 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- see Icons::svg() docblock. ?>
+						<?php esc_html_e( 'General', 'nex-captcha' ); ?>
+					</div>
+					<div class="nxc-card__body">
+						<?php self::render_general_panel( $settings ); ?>
+					</div>
+					<div class="nxc-card__footer">
+						<?php self::render_save_button(); ?>
+					</div>
+				</div>
+
+				<div class="nxc-card">
+					<div class="nxc-card__head">
+						<?php echo Icons::svg( 'list-checks', 18 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- see Icons::svg() docblock. ?>
+						<?php esc_html_e( 'Forms', 'nex-captcha' ); ?>
+					</div>
+					<div class="nxc-card__body">
+						<?php self::render_forms_panel( $settings ); ?>
+					</div>
+					<div class="nxc-card__footer">
+						<?php self::render_save_button(); ?>
+					</div>
+				</div>
+
+				<div class="nxc-card">
+					<div class="nxc-card__head">
+						<?php echo Icons::svg( 'lock', 18 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- see Icons::svg() docblock. ?>
+						<?php esc_html_e( 'Security', 'nex-captcha' ); ?>
+					</div>
+					<div class="nxc-card__body">
+						<?php self::render_security_panel( $settings ); ?>
+					</div>
+					<div class="nxc-card__footer">
+						<?php self::render_save_button(); ?>
+					</div>
+				</div>
+			</form>
+
+			<?php self::render_logs_drawer(); ?>
+			<div id="nxc-toaster" class="nxc-toaster" aria-live="polite"></div>
 		</div>
 		<?php
 	}
 
-	private static function current_tab(): string {
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only tab selector, no state change; the form POST itself is nonce-protected by settings_fields().
-		$tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'general';
-
-		return in_array( $tab, self::TABS, true ) ? $tab : 'general';
-	}
-
-	private static function tab_url( string $tab_id ): string {
-		return (string) add_query_arg(
-			array(
-				'page' => self::SLUG,
-				'tab'  => $tab_id,
-			),
-			admin_url( 'options-general.php' )
-		);
-	}
-
-	private static function tab_label( string $tab_id ): string {
-		$labels = array(
-			'general'  => __( 'General', 'nex-captcha' ),
-			'forms'    => __( 'Forms', 'nex-captcha' ),
-			'security' => __( 'Security', 'nex-captcha' ),
-			'logs'     => __( 'Logs', 'nex-captcha' ),
-		);
-
-		return $labels[ $tab_id ] ?? $tab_id;
+	private static function render_save_button(): void {
+		?>
+		<button type="submit" class="button button-primary">
+			<?php echo Icons::svg( 'save', 16, 2 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- see Icons::svg() docblock. ?>
+			<span class="nxc-btn-label"><?php esc_html_e( 'Save Changes', 'nex-captcha' ); ?></span>
+		</button>
+		<?php
 	}
 
 	/**
 	 * @param array<string, mixed> $settings
 	 */
-	private static function render_tab( string $tab, array $settings ): void {
-		if ( 'forms' === $tab ) {
-			self::render_forms_tab( $settings );
-		} elseif ( 'security' === $tab ) {
-			self::render_security_tab( $settings );
-		} else {
-			self::render_general_tab( $settings );
-		}
-	}
-
-	/**
-	 * @param array<string, mixed> $settings
-	 */
-	private static function render_general_tab( array $settings ): void {
+	private static function render_general_panel( array $settings ): void {
 		?>
 		<table class="form-table" role="presentation">
 			<tr>
@@ -152,10 +234,14 @@ class SettingsPage {
 			<tr>
 				<th scope="row"><?php esc_html_e( 'Escalation', 'nex-captcha' ); ?></th>
 				<td>
-					<label for="nxc-escalation">
-						<input type="checkbox" name="<?php echo esc_attr( self::OPTION ); ?>[escalation]" id="nxc-escalation" value="1" <?php checked( $settings['escalation'] ); ?> />
-						<?php esc_html_e( 'Switch suspicious requests to the slider puzzle', 'nex-captcha' ); ?>
-					</label>
+					<?php
+					self::render_toggle(
+						'nxc-escalation',
+						'[escalation]',
+						$settings['escalation'],
+						__( 'Switch suspicious requests to the slider puzzle', 'nex-captcha' )
+					);
+					?>
 					<p class="description"><?php esc_html_e( 'When a visitor\'s IP gets close to the rate limit, serve the slider puzzle instead of the invisible challenge.', 'nex-captcha' ); ?></p>
 				</td>
 			</tr>
@@ -166,7 +252,7 @@ class SettingsPage {
 	/**
 	 * @param array<string, mixed> $settings
 	 */
-	private static function render_forms_tab( array $settings ): void {
+	private static function render_forms_panel( array $settings ): void {
 		$labels = array(
 			'login'        => __( 'Login', 'nex-captcha' ),
 			'register'     => __( 'Registration', 'nex-captcha' ),
@@ -179,10 +265,14 @@ class SettingsPage {
 				<tr>
 					<th scope="row"><?php echo esc_html( $label ); ?></th>
 					<td>
-						<label>
-							<input type="checkbox" name="<?php echo esc_attr( self::OPTION ); ?>[forms][<?php echo esc_attr( $form_id ); ?>]" value="1" <?php checked( ! empty( $settings['forms'][ $form_id ] ) ); ?> />
-							<?php esc_html_e( 'Protect this form', 'nex-captcha' ); ?>
-						</label>
+						<?php
+						self::render_toggle(
+							'nxc-form-' . $form_id,
+							'[forms][' . $form_id . ']',
+							! empty( $settings['forms'][ $form_id ] ),
+							__( 'Protect this form', 'nex-captcha' )
+						);
+						?>
 					</td>
 				</tr>
 			<?php endforeach; ?>
@@ -193,7 +283,7 @@ class SettingsPage {
 	/**
 	 * @param array<string, mixed> $settings
 	 */
-	private static function render_security_tab( array $settings ): void {
+	private static function render_security_panel( array $settings ): void {
 		?>
 		<table class="form-table" role="presentation">
 			<tr>
@@ -209,10 +299,18 @@ class SettingsPage {
 				<th scope="row"><?php esc_html_e( 'Bypass roles', 'nex-captcha' ); ?></th>
 				<td>
 					<?php foreach ( wp_roles()->get_names() as $role_slug => $role_name ) : ?>
-						<label style="display:block;">
-							<input type="checkbox" name="<?php echo esc_attr( self::OPTION ); ?>[bypass_roles][]" value="<?php echo esc_attr( $role_slug ); ?>" <?php checked( in_array( $role_slug, $settings['bypass_roles'], true ) ); ?> />
-							<?php echo esc_html( translate_user_role( $role_name ) ); ?>
-						</label>
+						<?php $role_slug = (string) $role_slug; ?>
+						<div style="margin-bottom: 8px;">
+							<?php
+							self::render_toggle(
+								'nxc-role-' . $role_slug,
+								'[bypass_roles][]',
+								in_array( $role_slug, $settings['bypass_roles'], true ),
+								translate_user_role( $role_name ),
+								$role_slug
+							);
+							?>
+						</div>
 					<?php endforeach; ?>
 					<p class="description"><?php esc_html_e( 'Logged-in users with any of these roles skip verification on comments.', 'nex-captcha' ); ?></p>
 				</td>
@@ -239,12 +337,49 @@ class SettingsPage {
 	}
 
 	/**
-	 * Unlike the other three tabs, Logs has nothing to submit into
-	 * nxc_settings -- it's a read-only WP_List_Table with its own
-	 * GET-based pagination/filtering, so it isn't wrapped in the
-	 * options.php settings form render() uses for everything else.
+	 * A checkbox styled as a modern toggle switch (assets/src/admin.css's
+	 * .nxc-toggle), reused across every boolean setting on this page.
+	 * $name_suffix is appended to the option's array name (e.g.
+	 * "[escalation]" or "[forms][login]"), matching how each call site
+	 * already named its field before this helper existed.
 	 */
-	private static function render_logs_tab(): void {
+	private static function render_toggle( string $id, string $name_suffix, bool $checked, string $label, ?string $value = null ): void {
+		?>
+		<label class="nxc-toggle" for="<?php echo esc_attr( $id ); ?>">
+			<input
+				type="checkbox"
+				id="<?php echo esc_attr( $id ); ?>"
+				name="<?php echo esc_attr( self::OPTION . $name_suffix ); ?>"
+				value="<?php echo esc_attr( $value ?? '1' ); ?>"
+				<?php checked( $checked ); ?>
+			/>
+			<span class="nxc-toggle__track"></span>
+			<span class="nxc-toggle__label"><?php echo esc_html( $label ); ?></span>
+		</label>
+		<?php
+	}
+
+	/**
+	 * True when the page was loaded specifically to show the Logs
+	 * drawer open -- set by the "View Logs" button's link, and by
+	 * LogsTable's own pagination/filter links (which preserve whatever
+	 * query args were already on the page, including this one), so
+	 * paging/filtering the drawer's table is normal GET navigation that
+	 * re-opens the drawer automatically on reload, no AJAX needed.
+	 */
+	private static function is_logs_requested(): bool {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only view flag, no state change.
+		return isset( $_GET['view'] ) && 'logs' === sanitize_key( wp_unslash( $_GET['view'] ) );
+	}
+
+	/**
+	 * The Logs drawer: a right-docked slide-in panel (not a tab), with
+	 * its own header, a left icon-rail that filters the already-rendered
+	 * rows client-side by result (assets/src/admin.ts), and the existing
+	 * LogsTable for the actual data -- unchanged from before, just
+	 * rendered inside the drawer's content area instead of a tab panel.
+	 */
+	private static function render_logs_drawer(): void {
 		$table = new LogsTable();
 		$table->prepare_items();
 
@@ -252,22 +387,62 @@ class SettingsPage {
 			add_query_arg( self::logs_query_args(), admin_url( 'admin-post.php?action=nxc_export_logs' ) ),
 			'nxc_export_logs'
 		);
+
+		$filters = array(
+			''             => array( 'list', __( 'All', 'nex-captcha' ) ),
+			'passed'       => array( 'check-circle', __( 'Passed', 'nex-captcha' ) ),
+			'failed'       => array( 'x-circle', __( 'Failed', 'nex-captcha' ) ),
+			'blocked'      => array( 'shield-off', __( 'Blocked', 'nex-captcha' ) ),
+			'rate_limited' => array( 'clock', __( 'Rate limited', 'nex-captcha' ) ),
+		);
 		?>
-		<p>
-			<a href="<?php echo esc_url( $export_url ); ?>" class="button">
-				<?php esc_html_e( 'Export CSV', 'nex-captcha' ); ?>
-			</a>
-		</p>
-		<form method="get">
-			<input type="hidden" name="page" value="<?php echo esc_attr( self::SLUG ); ?>" />
-			<input type="hidden" name="tab" value="logs" />
-			<?php $table->display(); ?>
-		</form>
+		<div id="nxc-log-drawer-backdrop" class="nxc-drawer-backdrop"></div>
+		<div id="nxc-log-drawer" class="nxc-drawer" data-nonce="<?php echo esc_attr( wp_create_nonce( self::NONCE_ACTION ) ); ?>" data-default-open="<?php echo self::is_logs_requested() ? '1' : '0'; ?>">
+			<div class="nxc-drawer__head">
+				<span class="nxc-drawer__icon" aria-hidden="true">
+					<?php echo Icons::svg( 'list', 18 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- see Icons::svg() docblock. ?>
+				</span>
+				<h2><?php esc_html_e( 'Event Log', 'nex-captcha' ); ?></h2>
+				<div class="nxc-drawer__head-actions">
+					<a href="<?php echo esc_url( $export_url ); ?>" class="button nxc-drawer__export">
+						<?php echo Icons::svg( 'download', 16 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- see Icons::svg() docblock. ?>
+						<?php esc_html_e( 'Export CSV', 'nex-captcha' ); ?>
+					</a>
+					<button type="button" class="nxc-drawer__refresh" aria-label="<?php esc_attr_e( 'Refresh', 'nex-captcha' ); ?>">
+						<?php echo Icons::svg( 'refresh-cw', 16 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- see Icons::svg() docblock. ?>
+					</button>
+					<button type="button" class="nxc-drawer__close" aria-label="<?php esc_attr_e( 'Close', 'nex-captcha' ); ?>">
+						<?php echo Icons::svg( 'x', 16 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- see Icons::svg() docblock. ?>
+					</button>
+				</div>
+			</div>
+			<div class="nxc-drawer__body">
+				<div class="nxc-drawer__filters" role="toolbar" aria-label="<?php esc_attr_e( 'Filter log entries by result', 'nex-captcha' ); ?>">
+					<?php foreach ( $filters as $result => $filter ) : ?>
+						<button
+							type="button"
+							class="nxc-filter<?php echo '' === $result ? ' is-active' : ''; ?>"
+							data-result="<?php echo esc_attr( $result ); ?>"
+							title="<?php echo esc_attr( $filter[1] ); ?>"
+						>
+							<?php echo Icons::svg( $filter[0], 16 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- see Icons::svg() docblock. ?>
+						</button>
+					<?php endforeach; ?>
+				</div>
+				<div class="nxc-drawer__content">
+					<form method="get" data-ajax-filter="1">
+						<input type="hidden" name="page" value="<?php echo esc_attr( self::SLUG ); ?>" />
+						<input type="hidden" name="view" value="logs" />
+						<?php $table->display(); ?>
+					</form>
+				</div>
+			</div>
+		</div>
 		<?php
 	}
 
 	/**
-	 * The currently active Logs-tab filters, as query args -- reused for
+	 * The currently active Logs filters, as query args -- reused for
 	 * both the CSV export link and (via LogsTable::current_filters(),
 	 * reading the same $_GET keys) the table itself, so "export what
 	 * I'm looking at" actually matches.

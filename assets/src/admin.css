@@ -1,0 +1,662 @@
+/**
+ * Settings -> NexCaptcha admin screen. Scoped entirely under .nxc-admin
+ * (added to the page's own wrapper div) so nothing here ever leaks into
+ * the rest of wp-admin -- WP core's own .wrap/.form-table/.nav-tab-*
+ * classes are reused everywhere they'd otherwise apply unstyled.
+ *
+ * Follows this codebase's own design-system guide (see resource-manager/
+ * bbs-seo-article): the brand accent defers to WP's per-user admin color
+ * scheme (--wp-admin-theme-color) via color-mix() tints rather than a
+ * hardcoded hex, so it never clashes with Ocean/Midnight/etc. Status
+ * colors (success/warning/danger) are fixed -- WP core doesn't make
+ * those user-themeable either.
+ */
+.nxc-admin {
+
+	/* Brand accent -- WP core writes --wp-admin-theme-color on every
+     wp-admin page from the user's own Profile > Admin Color Scheme
+     choice; #2271b1 only matters if this ever rendered outside
+     wp-admin, which it doesn't today. No separate hover shade: there's
+     no way to algorithmically darken an arbitrary CSS variable without
+     relative color syntax, and a hardcoded hex (e.g. blue's own
+     #135e96) would be visibly wrong on every OTHER color scheme --
+     hover state is lift + shadow only, never a background change. */
+	--nxc-accent: var(--wp-admin-theme-color, #2271b1);
+
+	/* Status colors -- not user-themeable, stay fixed. */
+	--nxc-success: #00a32a;
+	--nxc-warning: #dba617;
+	--nxc-danger: #d63638;
+	--nxc-info: #72aee6;
+
+	/* Three text grays, no others. */
+	--nxc-text: #2c3338;
+	--nxc-text-light: #50575e;
+	--nxc-text-muted: #787c82;
+
+	--nxc-border: #c3c4c7;
+	--nxc-border-light: #e0e0e0;
+
+	--nxc-bg-page: #f0f0f1;
+	--nxc-bg-panel: #fff;
+	--nxc-bg-panel-head: #fafafa;
+
+	--nxc-radius-sm: 4px;
+	--nxc-radius: 8px;
+	--nxc-radius-lg: 12px;
+
+	--nxc-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+	--nxc-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+	--nxc-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+
+	max-width: 960px;
+	margin-top: 24px;
+}
+
+.nxc-admin h1 {
+	margin: 0;
+	font-size: 18px;
+	font-weight: 600;
+	color: var(--nxc-text);
+	padding: 0;
+}
+
+.nxc-admin__tagline {
+	margin: 0 0 0;
+	color: var(--nxc-text-muted);
+	font-size: 12px;
+	line-height: 1;
+	margin-top: 4px;
+}
+
+/* Top identity card: icon chip + name + version + tagline + View Logs,
+   all in one row -- no second status-bar zone. */
+.nxc-admin .nxc-identity {
+	margin-bottom: 20px;
+	padding: 0;
+}
+
+.nxc-identity__top {
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	padding: 20px;
+}
+
+.nxc-identity__text {
+	flex: 1 1 auto;
+	padding: 12px 0;
+}
+
+.nxc-identity__logs-btn {
+	flex-shrink: 0;
+}
+
+/* Icon chip: a soft tint of the accent behind its own icon, per this
+   codebase's own established pattern (color-mix at 10%, icon/text at
+   full strength). */
+.nxc-icon-chip {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 44px;
+	height: 44px;
+	flex-shrink: 0;
+	border-radius: var(--nxc-radius);
+	background: color-mix(in srgb, var(--nxc-accent) 10%, transparent);
+	color: var(--nxc-accent);
+}
+
+.nxc-version-pill {
+	display: inline-block;
+	margin-left: 6px;
+	padding: 1px 8px;
+	border-radius: 100px;
+	background: color-mix(in srgb, var(--nxc-accent) 10%, transparent);
+	color: var(--nxc-accent);
+	font-size: 11px;
+	font-weight: 600;
+	vertical-align: middle;
+}
+
+/* Panel anatomy: header + body (white, 20px padding) + footer, header
+   and footer both on the subtle --nxc-bg-panel-head tint. Hover
+   upgrades the shadow, never the border (this codebase's own stated
+   rule). */
+.nxc-admin .nxc-card {
+	background: var(--nxc-bg-panel);
+	border: 1px solid var(--nxc-border-light);
+	border-radius: var(--nxc-radius);
+	box-shadow: var(--nxc-shadow-sm);
+	margin-bottom: 20px;
+	transition: box-shadow 0.2s ease;
+}
+
+.nxc-admin .nxc-card:hover {
+	box-shadow: var(--nxc-shadow-md);
+}
+
+.nxc-admin .nxc-identity:hover {
+	box-shadow: var(--nxc-shadow-sm);
+}
+
+.nxc-admin .nxc-card__head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 14px 20px;
+	background: var(--nxc-bg-panel-head);
+	border-bottom: 1px solid var(--nxc-border-light);
+	border-radius: var(--nxc-radius) var(--nxc-radius) 0 0;
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--nxc-text);
+}
+
+/* Inline SVG icons already carry their own width/height; this just
+   stops their default inline-svg baseline gap from nudging them off
+   surrounding text's own baseline. */
+.nxc-admin .nxc-icon {
+	display: block;
+	flex-shrink: 0;
+}
+
+.nxc-admin .nxc-card__head .nxc-icon {
+	color: var(--nxc-accent);
+}
+
+.nxc-admin .nxc-card__body {
+	padding: 4px 12px;
+}
+
+.nxc-admin .nxc-card__footer {
+	padding: 12px 20px;
+	background: var(--nxc-bg-panel-head);
+	border-top: 1px solid var(--nxc-border-light);
+	border-radius: 0 0 var(--nxc-radius) var(--nxc-radius);
+	display: flex;
+	justify-content: flex-end;
+}
+
+.nxc-admin .button {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	border-radius: var(--nxc-radius-sm);
+	box-shadow: none;
+	transition: transform 0.2s ease;
+}
+
+.nxc-admin .button:hover {
+	transform: translateY(-1px);
+}
+
+.nxc-admin .nxc-card__footer .button {
+	margin: 0;
+}
+
+.nxc-admin .form-table {
+	border-collapse: collapse;
+}
+
+.nxc-admin .form-table tr {
+	border-bottom: 1px solid var(--nxc-border-light);
+}
+
+.nxc-admin .form-table tr:last-child {
+	border-bottom: none;
+}
+
+.nxc-admin .form-table th,
+.nxc-admin .form-table td {
+	padding: 14px 12px;
+}
+
+.nxc-admin .form-table th {
+	width: 200px;
+	font-weight: 600;
+	font-size: 13px;
+	color: var(--nxc-text);
+}
+
+.nxc-admin .form-table td {
+	font-size: 13px;
+	color: var(--nxc-text);
+}
+
+.nxc-admin .form-table .description {
+	margin-top: 6px;
+	font-size: 12px;
+	color: var(--nxc-text-muted);
+}
+
+.nxc-admin .form-table input[type="text"],
+.nxc-admin .form-table input[type="number"],
+.nxc-admin .form-table select,
+.nxc-admin .form-table textarea {
+	border-radius: var(--nxc-radius-sm);
+	border-color: var(--nxc-border);
+	transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.nxc-admin .form-table input[type="text"]:focus,
+.nxc-admin .form-table input[type="number"]:focus,
+.nxc-admin .form-table select:focus,
+.nxc-admin .form-table textarea:focus {
+	border-color: var(--nxc-accent);
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--nxc-accent) 12%, transparent);
+	outline: none;
+}
+
+/* Toggle switch -- a checkbox styled as a track+thumb via the adjacent
+   .nxc-toggle__track span; no JS needed, pure :checked selector. */
+.nxc-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	cursor: pointer;
+}
+
+.nxc-toggle input[type="checkbox"] {
+	position: absolute;
+	opacity: 0;
+	width: 1px;
+	height: 1px;
+}
+
+.nxc-toggle__track {
+	position: relative;
+	width: 36px;
+	height: 20px;
+	flex-shrink: 0;
+	background: var(--nxc-border);
+	border-radius: 100px;
+	transition: background 0.2s ease;
+}
+
+.nxc-toggle__track::after {
+	content: "";
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: 16px;
+	height: 16px;
+	background: #fff;
+	border-radius: 50%;
+	box-shadow: var(--nxc-shadow-sm);
+	transition: transform 0.2s ease;
+}
+
+.nxc-toggle input:checked + .nxc-toggle__track {
+	background: var(--nxc-accent);
+}
+
+.nxc-toggle input:checked + .nxc-toggle__track::after {
+	transform: translateX(16px);
+}
+
+.nxc-toggle input:focus-visible + .nxc-toggle__track {
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--nxc-accent) 12%, transparent);
+}
+
+.nxc-toggle__label {
+	font-size: 13px;
+	color: var(--nxc-text);
+}
+
+.nxc-admin .button-primary {
+	background: var(--nxc-accent);
+	border-color: var(--nxc-accent);
+	border-radius: var(--nxc-radius-sm);
+	box-shadow: none;
+	text-shadow: none;
+	font-weight: 500;
+	transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.nxc-admin .button-primary:hover,
+.nxc-admin .button-primary:focus {
+	transform: translateY(-1px);
+	box-shadow: var(--nxc-shadow-sm);
+}
+
+/* Logs tab */
+.nxc-admin .wp-list-table {
+	border: 1px solid var(--nxc-border-light);
+	border-radius: var(--nxc-radius);
+	overflow: hidden;
+	box-shadow: var(--nxc-shadow-sm);
+}
+
+.nxc-admin .wp-list-table th,
+.nxc-admin .wp-list-table td {
+	padding: 8px 10px;
+	font-size: 13px;
+	color: var(--nxc-text);
+}
+
+.nxc-admin .wp-list-table thead th {
+	font-size: 11px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--nxc-text-muted);
+	background: var(--nxc-bg-panel-head);
+}
+
+.nxc-admin .wp-list-table tbody tr:hover {
+	background: color-mix(in srgb, var(--nxc-accent) 6%, transparent);
+}
+
+.nxc-admin .tablenav .actions select {
+	border-radius: var(--nxc-radius-sm);
+}
+
+/* ip_hash column is a hex digest -- metadata, not prose. */
+.nxc-admin .wp-list-table .column-ip_hash {
+	font-family: Consolas, Monaco, monospace;
+	font-size: 12px;
+	color: var(--nxc-text-light);
+}
+
+.nxc-pill {
+	display: inline-block;
+	padding: 2px 10px;
+	border-radius: 100px;
+	font-size: 11px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.02em;
+}
+
+.nxc-pill--passed {
+	background: color-mix(in srgb, var(--nxc-success) 10%, transparent);
+	color: var(--nxc-success);
+}
+
+.nxc-pill--failed,
+.nxc-pill--blocked {
+	background: color-mix(in srgb, var(--nxc-danger) 10%, transparent);
+	color: var(--nxc-danger);
+}
+
+.nxc-pill--rate_limited {
+	background: color-mix(in srgb, var(--nxc-warning) 10%, transparent);
+	color: var(--nxc-warning);
+}
+
+/* Logs drawer -- right-docked slide-in panel (not a tab), modeled on
+   this codebase's own bbs-log-drawer pattern (see admin.css's own
+   top-of-file note on where this design system comes from). Toggled
+   via .is-open on both the drawer and its backdrop (assets/src/admin.ts). */
+.nxc-drawer-backdrop {
+	position: fixed;
+	inset: 0;
+	background: rgba(20, 22, 30, 0.35);
+	opacity: 0;
+	visibility: hidden;
+	transition: opacity 0.25s ease, visibility 0.25s ease;
+	z-index: 100000;
+}
+
+.nxc-drawer-backdrop.is-open {
+	opacity: 1;
+	visibility: visible;
+}
+
+.nxc-drawer {
+	position: fixed;
+	top: 50%;
+	right: 24px;
+	width: 54vw;
+	max-width: calc(100vw - 48px);
+	height: 74vh;
+	max-height: 720px;
+	background: var(--nxc-bg-panel);
+	border-radius: var(--nxc-radius-lg);
+	box-shadow: var(--nxc-shadow-lg);
+	z-index: 100001;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	transform: translateY(-50%) translateX(calc(100% + 48px));
+	transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+	border: 3px solid color-mix(in srgb, var(--nxc-accent) 60%, transparent);
+	box-sizing: content-box;
+}
+
+.nxc-drawer.is-open {
+	transform: translateY(-50%) translateX(0);
+}
+
+.nxc-drawer__head {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 16px 18px;
+	background: var(--nxc-bg-panel);
+	border-bottom: 1px solid var(--nxc-border-light);
+	flex: 0 0 auto;
+}
+
+.nxc-drawer__icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	width: 32px;
+	height: 32px;
+	border-radius: var(--nxc-radius-sm);
+	background: color-mix(in srgb, var(--nxc-accent) 10%, transparent);
+	color: var(--nxc-accent);
+}
+
+.nxc-drawer__head h2 {
+	margin: 0;
+	padding: 0;
+	border: 0;
+	font-size: 15px;
+	font-weight: 700;
+	color: var(--nxc-text);
+}
+
+.nxc-drawer__head-actions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-left: auto;
+}
+
+.nxc-drawer__refresh,
+.nxc-drawer__close {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	padding: 0;
+	margin: 0;
+	border: none;
+	cursor: pointer;
+	color: var(--nxc-text-light);
+	transition: background 0.2s ease, color 0.2s ease;
+}
+
+.nxc-drawer__refresh {
+	border-radius: var(--nxc-radius-sm);
+	background: transparent;
+}
+
+.nxc-drawer__refresh:hover {
+	color: var(--nxc-accent);
+	background: color-mix(in srgb, var(--nxc-accent) 10%, transparent);
+}
+
+.nxc-drawer__close {
+	border-radius: 50%;
+	background: var(--nxc-bg-panel-head);
+}
+
+.nxc-drawer__close:hover {
+	color: var(--nxc-text);
+	background: var(--nxc-border-light);
+}
+
+.nxc-drawer__body {
+	flex: 1 1 auto;
+	display: flex;
+	overflow: hidden;
+}
+
+.nxc-drawer__filters {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 10px;
+	flex: 0 0 auto;
+	width: 52px;
+	padding: 14px 0;
+	background: var(--nxc-bg-panel-head);
+	border-right: 1px solid var(--nxc-border-light);
+	overflow-y: auto;
+}
+
+.nxc-filter {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	width: 32px;
+	height: 32px;
+	padding: 0;
+	margin: 0;
+	border: 1px solid var(--nxc-border-light);
+	border-radius: 50%;
+	background: var(--nxc-bg-panel);
+	color: var(--nxc-text-muted);
+	cursor: pointer;
+	transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.nxc-filter:hover {
+	color: var(--nxc-text);
+	box-shadow: var(--nxc-shadow-sm);
+	transform: translateY(-1px);
+}
+
+.nxc-filter.is-active {
+	color: var(--nxc-accent);
+	background: color-mix(in srgb, var(--nxc-accent) 10%, transparent);
+	border-color: color-mix(in srgb, var(--nxc-accent) 40%, transparent);
+}
+
+.nxc-filter[data-result="passed"].is-active {
+	color: var(--nxc-success);
+	background: color-mix(in srgb, var(--nxc-success) 10%, transparent);
+	border-color: var(--nxc-success);
+}
+
+.nxc-filter[data-result="failed"].is-active,
+.nxc-filter[data-result="blocked"].is-active {
+	color: var(--nxc-danger);
+	background: color-mix(in srgb, var(--nxc-danger) 10%, transparent);
+	border-color: var(--nxc-danger);
+}
+
+.nxc-filter[data-result="rate_limited"].is-active {
+	color: var(--nxc-warning);
+	background: color-mix(in srgb, var(--nxc-warning) 10%, transparent);
+	border-color: var(--nxc-warning);
+}
+
+.nxc-drawer__content {
+	flex: 1 1 auto;
+	overflow-y: auto;
+	padding: 0 18px 18px;
+}
+
+.nxc-drawer__content .wp-list-table {
+	box-shadow: none;
+}
+
+.nxc-drawer__content .tablenav {
+	padding: 10px 0;
+}
+
+/* Brief dim while an AJAX filter/page/refresh request is in flight --
+   the content being replaced stays visible (no layout jump) but reads
+   as "busy" until the fetch resolves. */
+.nxc-drawer__content.is-loading {
+	opacity: 0.5;
+	pointer-events: none;
+	transition: opacity 0.15s ease;
+}
+
+/* Toast feedback for AJAX settings saves -- there's no page reload to
+   implicitly confirm success/failure anymore, so this is the only
+   signal the user gets. Fixed bottom-right stack, auto-dismissed in JS. */
+.nxc-toaster {
+	position: fixed;
+	right: 24px;
+	bottom: 24px;
+	z-index: 100002;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	pointer-events: none;
+}
+
+.nxc-toast {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 12px 16px;
+	border-radius: var(--nxc-radius);
+	background: var(--nxc-bg-panel);
+	box-shadow: var(--nxc-shadow-lg);
+	font-size: 13px;
+	color: var(--nxc-text);
+	max-width: 320px;
+	opacity: 0;
+	transform: translateY(8px);
+	transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.nxc-toast.is-visible {
+	opacity: 1;
+	transform: translateY(0);
+}
+
+.nxc-toast__icon {
+	display: block;
+	flex-shrink: 0;
+}
+
+.nxc-toast--success {
+	border: 1px solid color-mix(in srgb, var(--nxc-success) 40%, transparent);
+}
+
+.nxc-toast--success .nxc-toast__icon {
+	color: var(--nxc-success);
+}
+
+.nxc-toast--error {
+	border: 1px solid color-mix(in srgb, var(--nxc-danger) 40%, transparent);
+}
+
+.nxc-toast--error .nxc-toast__icon {
+	color: var(--nxc-danger);
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+	.nxc-drawer,
+	.nxc-drawer-backdrop,
+	.nxc-filter,
+	.nxc-toast,
+	.nxc-admin .button:hover,
+	.nxc-admin .button-primary:hover {
+		transition: none;
+		transform: none;
+	}
+}

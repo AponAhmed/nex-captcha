@@ -31,4 +31,27 @@ class Assets {
 			NXC_VERSION
 		);
 	}
+
+	/**
+	 * Enqueues the Settings -> NexCaptcha screen's own script and
+	 * stylesheet. Admin\SettingsPage calls this only on its own screen
+	 * (checked via the admin_enqueue_scripts hook suffix), so neither
+	 * ever loads elsewhere in wp-admin.
+	 */
+	public static function enqueue_admin(): void {
+		wp_enqueue_script(
+			'nxc-admin',
+			NXC_URL . 'assets/build/admin.js',
+			array(),
+			NXC_VERSION,
+			true
+		);
+
+		wp_enqueue_style(
+			'nxc-admin',
+			NXC_URL . 'assets/src/admin.css',
+			array(),
+			NXC_VERSION
+		);
+	}
 }

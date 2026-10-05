@@ -13,7 +13,10 @@ function buildWidget(): HTMLElement {
   document.body.innerHTML = `
     <form>
       <div class="nxc-widget">
-        <div class="nxc-widget__status"></div>
+        <div class="nxc-widget__status">
+          <span class="nxc-widget__spinner"></span>
+          <span class="nxc-widget__status-text"></span>
+        </div>
       </div>
     </form>
   `;

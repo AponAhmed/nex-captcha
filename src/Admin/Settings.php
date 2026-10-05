@@ -89,47 +89,38 @@ class Settings {
 	}
 
 	/**
-	 * SettingsPage renders General/Forms/Security as three SEPARATE
-	 * <form>s (one per tab), each posting only its own fields -- but
-	 * this is the sanitize_callback for a single shared option, called
-	 * fresh on every one of those submits. Without knowing which tab
-	 * sent $input, "a field this tab doesn't own is absent" is
-	 * indistinguishable from "the user unchecked/cleared it", and every
-	 * save would wipe every OTHER tab's fields back to their
-	 * empty/false default. SettingsPage writes `_section` as a hidden
-	 * field naming the submitting tab; only that tab's own fields are
-	 * processed from $input, everything else is carried over from the
-	 * currently stored value untouched.
+	 * SettingsPage used to render General/Forms/Security as three
+	 * SEPARATE <form>s (one per tab), which meant this sanitize_callback
+	 * couldn't tell "a field this submit doesn't own is absent" apart
+	 * from "the user unchecked/cleared it" -- every save silently wiped
+	 * every OTHER tab's fields back to empty/false. That's fixed at the
+	 * source now instead of gated here: SettingsPage renders General,
+	 * Forms and Security as stacked panels inside ONE shared <form>, so
+	 * every submit -- regardless of which panel's own Save button was
+	 * clicked -- always carries every field together. Fields with no
+	 * admin UI control at all yet (mode, theme, trusted_proxies,
+	 * fail_mode, logging) are simply never touched here and stay
+	 * whatever $current already had, same as always.
 	 *
 	 * @param array<string, mixed> $input
 	 * @return array<string, mixed>
 	 */
 	public static function sanitize( array $input ): array {
 		$current = self::all();
-		$section = is_string( $input['_section'] ?? null ) ? $input['_section'] : '';
 
-		$result                   = $current;
-		$result['schema_version'] = self::SCHEMA_VERSION;
-
-		if ( 'general' === $section ) {
-			$result['difficulty']       = self::sanitize_enum( $input['difficulty'] ?? null, self::DIFFICULTIES, $current['difficulty'] );
-			$result['custom_maxnumber'] = self::sanitize_positive_int( $input['custom_maxnumber'] ?? null, $current['custom_maxnumber'] );
-			$result['escalation']       = ! empty( $input['escalation'] );
-		}
-
-		if ( 'forms' === $section ) {
-			$result['forms'] = self::sanitize_forms( $input['forms'] ?? array() );
-		}
-
-		if ( 'security' === $section ) {
-			$result['allowlist']         = self::sanitize_ip_list( $input['allowlist'] ?? array() );
-			$result['bypass_roles']      = self::sanitize_roles( $input['bypass_roles'] ?? array() );
-			$result['rate_limit']        = array(
-				'max'    => self::sanitize_positive_int( $input['rate_limit']['max'] ?? null, $current['rate_limit']['max'] ),
-				'window' => self::sanitize_positive_int( $input['rate_limit']['window'] ?? null, $current['rate_limit']['window'] ),
-			);
-			$result['time_trap_seconds'] = self::sanitize_positive_int( $input['time_trap_seconds'] ?? null, $current['time_trap_seconds'] );
-		}
+		$result                      = $current;
+		$result['schema_version']    = self::SCHEMA_VERSION;
+		$result['difficulty']        = self::sanitize_enum( $input['difficulty'] ?? null, self::DIFFICULTIES, $current['difficulty'] );
+		$result['custom_maxnumber']  = self::sanitize_positive_int( $input['custom_maxnumber'] ?? null, $current['custom_maxnumber'] );
+		$result['escalation']        = ! empty( $input['escalation'] );
+		$result['forms']             = self::sanitize_forms( $input['forms'] ?? array() );
+		$result['allowlist']         = self::sanitize_ip_list( $input['allowlist'] ?? array() );
+		$result['bypass_roles']      = self::sanitize_roles( $input['bypass_roles'] ?? array() );
+		$result['rate_limit']        = array(
+			'max'    => self::sanitize_positive_int( $input['rate_limit']['max'] ?? null, $current['rate_limit']['max'] ),
+			'window' => self::sanitize_positive_int( $input['rate_limit']['window'] ?? null, $current['rate_limit']['window'] ),
+		);
+		$result['time_trap_seconds'] = self::sanitize_positive_int( $input['time_trap_seconds'] ?? null, $current['time_trap_seconds'] );
 
 		return $result;
 	}

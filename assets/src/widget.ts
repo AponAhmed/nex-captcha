@@ -10,6 +10,7 @@
 
 import { renderSlider, type SliderPayload } from './slider';
 import { renderMath, type MathPayload } from './math';
+import { setStatus } from './status';
 
 // Injected at build time (assets/build.mjs) with worker.ts's bundled
 // source, so the worker runs from a Blob URL with no extra request.
@@ -48,11 +49,23 @@ const REFRESH_BUFFER_MS = 30_000;
 const MIN_REFRESH_MS = 5_000;
 const started = new WeakSet<Element>();
 
-function setStatus(widget: HTMLElement, text: string): void {
-  const status = widget.querySelector<HTMLElement>('.nxc-widget__status');
-  if (status) {
-    status.textContent = text;
+/**
+ * Disabled while the invisible challenge is being fetched/solved -- the
+ * user has nothing to do yet, so a clickable submit button would let
+ * them submit with nxc_token still empty. Re-enabled the moment there's
+ * either a completed token (invisible mode, verified) or a visible task
+ * the user is meant to complete instead (slider/math) -- see
+ * solveWidget()'s own call sites for exactly where each applies.
+ */
+export function setButtonsDisabled(widget: HTMLElement, disabled: boolean): void {
+  const form = widget.closest('form');
+  if (!form) {
+    return;
   }
+
+  form.querySelectorAll<HTMLButtonElement | HTMLInputElement>('button[type="submit"], input[type="submit"]').forEach((button) => {
+    button.disabled = disabled;
+  });
 }
 
 function tokenInput(widget: HTMLElement): HTMLInputElement | null {
@@ -153,7 +166,7 @@ export function hasWebCrypto(): boolean {
   return typeof crypto !== 'undefined' && typeof crypto.subtle !== 'undefined';
 }
 
-async function solveWidget(widget: HTMLElement, forcedMode?: string): Promise<void> {
+async function solveWidget(widget: HTMLElement, forcedMode?: string, isRefresh = false): Promise<void> {
   const form = widget.dataset.form;
   const restUrl = widget.dataset.restUrl;
   const input = tokenInput(widget);
@@ -161,6 +174,20 @@ async function solveWidget(widget: HTMLElement, forcedMode?: string): Promise<vo
   if (!form || !restUrl || !input) {
     return;
   }
+
+  // A background pre-expiry refresh (scheduleRefresh) re-solves behind
+  // the scenes -- the previous token is still sitting in the field and
+  // still valid, so touching the button here would just be a visible
+  // glitch for someone mid-submit, not a real guard against anything.
+  // manageButton() is the single gate every call site below goes
+  // through instead of calling setButtonsDisabled() directly.
+  const manageButton = (disabled: boolean) => {
+    if (!isRefresh) {
+      setButtonsDisabled(widget, disabled);
+    }
+  };
+
+  manageButton(true);
 
   const effectiveMode = forcedMode ?? (hasWebCrypto() ? undefined : 'slider');
 
@@ -177,7 +204,8 @@ async function solveWidget(widget: HTMLElement, forcedMode?: string): Promise<vo
     payload = await response.json();
   } catch (error) {
     console.warn('NexCaptcha: could not fetch a challenge.', error);
-    setStatus(widget, 'Verification unavailable.');
+    setStatus(widget, 'Verification unavailable.', 'error');
+    manageButton(false);
     return;
   }
 
@@ -192,12 +220,18 @@ async function solveWidget(widget: HTMLElement, forcedMode?: string): Promise<vo
     renderSlider(widget, payload, () => {
       void solveWidget(widget, 'math');
     });
+    // From here it's a visible task the user completes themselves --
+    // correctness can't be confirmed client-side (see renderSlider()'s
+    // own docblock), so the button re-enables rather than staying
+    // gated on something this widget can never locally verify.
+    manageButton(false);
     scheduleRefresh(widget, payload.salt);
     return;
   }
 
   if (payload.mode === 'math') {
     renderMath(widget, payload);
+    manageButton(false);
     scheduleRefresh(widget, payload.salt);
     return;
   }
@@ -208,14 +242,16 @@ async function solveWidget(widget: HTMLElement, forcedMode?: string): Promise<vo
   // nxc_token forever empty -- surface it instead.
   if (!hasWebCrypto()) {
     console.warn('NexCaptcha: Web Crypto is unavailable in this context; cannot solve the invisible challenge.');
-    setStatus(widget, 'Verification unavailable.');
+    setStatus(widget, 'Verification unavailable.', 'error');
+    manageButton(false);
     return;
   }
 
   const solved = await runWorker(payload);
 
   if (!solved) {
-    setStatus(widget, 'Verification failed, please try again.');
+    setStatus(widget, 'Verification failed, please try again.', 'error');
+    manageButton(false);
     return;
   }
 
@@ -229,7 +265,8 @@ async function solveWidget(widget: HTMLElement, forcedMode?: string): Promise<vo
   };
 
   input.value = btoa(JSON.stringify(token));
-  setStatus(widget, 'Verified.');
+  setStatus(widget, 'Verified.', 'verified');
+  manageButton(false);
 
   scheduleRefresh(widget, payload.salt);
 }
@@ -244,7 +281,7 @@ function scheduleRefresh(widget: HTMLElement, salt: string): void {
   if (expires) {
     const remaining = Math.max(expires * 1000 - Date.now() - REFRESH_BUFFER_MS, MIN_REFRESH_MS);
     setTimeout(() => {
-      void solveWidget(widget);
+      void solveWidget(widget, undefined, true);
     }, remaining);
   }
 }
@@ -255,6 +292,13 @@ function initWidget(widget: HTMLElement): void {
   }
 
   trackInteraction(widget);
+
+  // The static template already shows "Verifying you are human…" from
+  // first paint; disabling here (rather than waiting for solveWidget()'s
+  // own lazy IntersectionObserver/focusin trigger to fire) closes the
+  // gap where the button would otherwise be clickable while that text
+  // is already telling the visitor verification is in progress.
+  setButtonsDisabled(widget, true);
 
   const start = () => {
     if (started.has(widget)) {
@@ -278,8 +322,26 @@ function initWidget(widget: HTMLElement): void {
   form?.addEventListener('focusin', start, { once: true });
 }
 
+/**
+ * Contact Form 7 forms commonly get submitted more than once on the
+ * same page load (no reload/redirect, unlike login/register/comments),
+ * so a solved invisible-mode token would otherwise sit stale/reused
+ * for a second send. CF7's own Turnstile/reCAPTCHA modules handle this
+ * identically (document.addEventListener('wpcf7submit', ...) resetting
+ * their widget); harmless on any page without CF7 since the event
+ * simply never fires there.
+ */
+function reinitOnCf7Submit(event: Event): void {
+  const form = event.target as HTMLElement;
+  form.querySelectorAll<HTMLElement>('.nxc-widget').forEach((widget) => {
+    started.delete(widget);
+    void solveWidget(widget);
+  });
+}
+
 function init(): void {
   document.querySelectorAll<HTMLElement>('.nxc-widget').forEach(initWidget);
+  document.addEventListener('wpcf7submit', reinitOnCf7Submit);
 }
 
 if (document.readyState === 'loading') {

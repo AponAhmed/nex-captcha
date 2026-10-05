@@ -82,6 +82,37 @@ class LogsTable extends WP_List_Table {
 	}
 
 	/**
+	 * @param array<string, mixed> $item
+	 */
+	public function column_result( $item ): string {
+		$result = (string) ( $item['result'] ?? '' );
+
+		if ( '' === $result ) {
+			return '';
+		}
+
+		return sprintf(
+			'<span class="nxc-pill nxc-pill--%1$s">%2$s</span>',
+			esc_attr( $result ),
+			esc_html( str_replace( '_', ' ', $result ) )
+		);
+	}
+
+	/**
+	 * Adds a data-result attribute WP_List_Table doesn't normally put on
+	 * its own <tr> -- the Logs drawer's icon-rail filter (admin.ts)
+	 * reads this to show/hide already-rendered rows client-side, no
+	 * AJAX re-query needed.
+	 *
+	 * @param array<string, mixed> $item
+	 */
+	public function single_row( $item ): void {
+		printf( '<tr data-result="%s">', esc_attr( (string) ( $item['result'] ?? '' ) ) );
+		$this->single_row_columns( $item );
+		echo '</tr>';
+	}
+
+	/**
 	 * @param string $which
 	 */
 	protected function extra_tablenav( $which ): void {

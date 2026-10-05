@@ -66,3 +66,48 @@ if ( ! class_exists( 'WP_List_Table' ) ) {
 		public function __construct( array $args = array() ) {}
 	}
 }
+
+// Minimal Contact Form 7 stand-ins -- CF7 itself isn't loaded for unit
+// tests, so Integrations\ContactForm7Test needs just enough of its real
+// shape (get_current()/id() on WPCF7_ContactForm, get_contact_form()/
+// add_spam_log() on WPCF7_Submission) to exercise verify()/render_tag()
+// without the real plugin installed.
+if ( ! class_exists( 'WPCF7_ContactForm' ) ) {
+	class WPCF7_ContactForm {
+		private static ?self $current = null;
+
+		public function __construct( private int $id ) {}
+
+		public static function get_current(): ?self {
+			return self::$current;
+		}
+
+		public static function set_current( ?self $form ): void {
+			self::$current = $form;
+		}
+
+		public function id(): int {
+			return $this->id;
+		}
+	}
+}
+
+if ( ! class_exists( 'WPCF7_Submission' ) ) {
+	class WPCF7_Submission {
+		/** @var array<int, array<string, mixed>> */
+		public array $spam_log = array();
+
+		public function __construct( private WPCF7_ContactForm $contact_form ) {}
+
+		public function get_contact_form(): WPCF7_ContactForm {
+			return $this->contact_form;
+		}
+
+		/**
+		 * @param array<string, mixed>|string $data
+		 */
+		public function add_spam_log( $data = '' ): void {
+			$this->spam_log[] = (array) $data;
+		}
+	}
+}

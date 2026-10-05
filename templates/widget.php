@@ -27,8 +27,9 @@ $nxc_math     = MathChallenge::create( $form_id, 0, (int) apply_filters( 'nxc_ch
 		<label for="<?php echo esc_attr( $nxc_field_id ); ?>_hp"><?php esc_html_e( 'Leave this field empty', 'nex-captcha' ); ?></label>
 		<input type="text" name="nxc_hp" id="<?php echo esc_attr( $nxc_field_id ); ?>_hp" tabindex="-1" autocomplete="off" value="" />
 	</div>
-	<div class="nxc-widget__status" role="status" aria-live="polite">
-		<?php esc_html_e( 'Verifying you are human…', 'nex-captcha' ); ?>
+	<div class="nxc-widget__status" role="status" aria-live="polite" data-state="pending">
+		<span class="nxc-widget__spinner" aria-hidden="true"></span>
+		<span class="nxc-widget__status-text"><?php esc_html_e( 'Verifying you are human…', 'nex-captcha' ); ?></span>
 	</div>
 	<noscript>
 		<div class="nxc-widget__math">

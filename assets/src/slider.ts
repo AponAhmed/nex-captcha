@@ -23,6 +23,8 @@
  * reason.
  */
 
+import { setStatus } from './status';
+
 // Mirrors Challenge\SliderChallenge's own constants (src/Challenge/SliderChallenge.php).
 const WIDTH = 300;
 const HEIGHT = 150;
@@ -74,10 +76,7 @@ function hiddenInput(name: string, value: string): HTMLInputElement {
 export function renderSlider(widget: HTMLElement, payload: SliderPayload, onRequestAlternative: () => void): void {
   clearPreviousRender(widget);
 
-  const status = widget.querySelector<HTMLElement>('.nxc-widget__status');
-  if (status) {
-    status.textContent = 'Drag the puzzle piece into the gap, then submit the form.';
-  }
+  setStatus(widget, 'Drag the puzzle piece into the gap, then submit the form.', 'info');
 
   const container = document.createElement('div');
   container.className = 'nxc-widget__slider';
